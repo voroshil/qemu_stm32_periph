@@ -277,7 +277,7 @@ void stm32_init(
                  address_space_mem,
                  0,
                  flash_size);
-         memory_region_add_subregion(address_space_mem, 0x08000000, flash_alias_mem);
+         memory_region_add_subregion(address_space_mem, STM32_FLASH_ADDR_START, flash_alias_mem);
     }
     else{ //Use new FLASH mode with reset support
          dinfo = drive_get(IF_PFLASH, 0, 0);

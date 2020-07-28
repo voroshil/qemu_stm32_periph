@@ -38,10 +38,6 @@
 #include "hw/sysbus.h"
 
 
-static uint32_t is_flash_locked = 1;
-static uint32_t flash_programming_bit = 0;
-
-
 typedef struct Stm32Flash {
 	SysBusDevice busdev;   
     BlockDriverState * blks;
@@ -52,6 +48,10 @@ typedef struct Stm32Flash {
     hwaddr SP_init;
     hwaddr PC_init;    
 } Stm32Flash;
+
+static Stm32Flash*flash;
+static uint32_t is_flash_locked = 1;
+static uint32_t flash_programming_bit = 0;
 
 
 /* */
@@ -81,7 +81,7 @@ MemoryRegion *get_system_memory(void); /* XXX */
 
 static int stm32_flash_init(SysBusDevice *dev)
 {    
-    Stm32Flash*flash = DO_UPCAST(Stm32Flash, busdev, dev);
+    flash = DO_UPCAST(Stm32Flash, busdev, dev);
 
 //    memory_region_init_rom_device(&flash->mem, &f2xx_flash_ops, flash, "name",
 //      size);
@@ -91,7 +91,7 @@ static int stm32_flash_init(SysBusDevice *dev)
     //vmstate_register_ram_global(&flash->iomem);
     memory_region_set_readonly(&flash->iomem, true);
     memory_region_add_subregion(get_system_memory(), flash->base_address, &flash->iomem);
-//    sysbus_init_mmio(dev, &flash->mem);
+
 
     flash->data = memory_region_get_ram_ptr(&flash->iomem);
     memset(flash->data, 0xff, flash->size);
@@ -133,7 +133,7 @@ stm32_flash_reset(DeviceState *ds)
 static Property stm32_flash_properties[] = {
     DEFINE_PROP_DRIVE("drive", Stm32Flash, blks),
     DEFINE_PROP_UINT32("size", Stm32Flash, size, 0),
-    DEFINE_PROP_UINT64("base_address", Stm32Flash , base_address, 0x08000000),
+    DEFINE_PROP_UINT64("base_address", Stm32Flash , base_address, STM32_FLASH_ADDR_START),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -303,7 +303,9 @@ stm32_flash_regs_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 
 	case R_FLASH_KEYR:
 		if (s->KEYR == FLASH_OPTKEY1 && data == FLASH_OPTKEY2) {
+#ifdef DEBUG_FLASH
 			printf("Flash is unlocked!\n");
+#endif            
 			s->CR &= ~FLASH_CR_LOCK;
 			is_flash_locked = 0;
 		}
@@ -322,30 +324,34 @@ stm32_flash_regs_write(void *arg, hwaddr addr, uint64_t data, unsigned int size)
 		if (is_flash_locked == 0 && (data & FLASH_CR_LOCK)) {
 			if (data & FLASH_CR_PG)
 				hw_error("stm32_flash: Attempted to write flash lock while flash program is on!");
+#ifdef DEBUG_FLASH            
 			printf("Flash is locked!\n");
+#endif            
 			//s->CR &= ~FLASH_CR_LOCK;
 			is_flash_locked = 1;
+            memory_region_set_readonly(&flash->iomem, true);
 
 		} else if ( (s->CR & FLASH_CR_PER) && (data & FLASH_CR_STRT) ) { //erase
 			if (data & FLASH_CR_PG || (data & FLASH_CR_LOCK))
 				hw_error("stm32_flash: Attempted to erase flash block while flash program/flash lock is on!");
-
-			printf("start erase\n");
-			/*
-            if ( (s->AR % 1024) == 0 && (s->AR >= 0x10000000) && (s->AR <= 0x10010000) ) {
-
-				fseek(fp, (s->AR) - 0x10000000, SEEK_SET);
-				if (fwrite( two_block_zeros , 1, 1024, fp) != 1024)
-					printf("warning: error erase!\n");
+#ifdef DEBUG_FLASH
+			printf("start erase address 0x%08X \n", s->AR);
+#endif			
+            if ( (s->AR % 1024) == 0 && (s->AR >= STM32_FLASH_ADDR_START) && (s->AR <= (STM32_FLASH_ADDR_START+flash->size-1024) ) ) { 
+                memset(flash->data+(s->AR-STM32_FLASH_ADDR_START) , 0xFF, 1024);
+#ifdef DEBUG_FLASH              
+              printf("erased\n");
+#endif              
 			} else {
 				printf("ADDRESS: %u\n", s->AR);
 				hw_error("stm32_flash: Attempted to erase flash memory page while address is not alligned!");
 			}
-            */
+            
 		} else if (data & FLASH_CR_PG) {
 			if (data & FLASH_CR_LOCK || data & FLASH_CR_PER)
 				hw_error("stm32_flash: Attempted to write flash program while flash lock/flash erase is on!");
 			flash_programming_bit = 1;
+            memory_region_set_readonly(&flash->iomem, false);
 
 		} else if (data & ~FLASH_CR_PG) {
 			flash_programming_bit = 0;

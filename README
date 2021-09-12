@@ -8,17 +8,19 @@ of the STM32 microcontroller.  It also implements an Olimex STM32_P103
 developmentvboard.  This project runs the demos located in the
 stm32_p103_demos project located at: https://github.com/beckus/stm32_p103_demos .
 
+Prerequisites - On a fresh install of Ubuntu 20.04, the following command will install dependencies:
+    sudo apt-get install build-essential python zlib1g-dev libglib2.0-dev libpixman-1-dev libtool libfdt-dev
+
 Commands for a typical build:
-./configure --enable-debug --target-list="arm-softmmu"
-make
+    ./configure --enable-debug --disable-werror --target-list="arm-softmmu"
+    make
 
 Useful make commands when rebuilding:
     make defconfig
     make clean
 
-If you receive a warning during compilation, this may cause the build to fail.
-In this case you can pass the following option to the "configure" command to
-ignore warnings:
+Note: we pass the following option to the "configure" command to
+ignore warnings (otherwise warnings will cause the build to fail):
     --disable-werror
 
 The generated executable is arm-softmmu/qemu-system-arm .

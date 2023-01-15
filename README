@@ -12,16 +12,19 @@ Prerequisites - On a fresh install of Ubuntu 20.04, the following command will i
     sudo apt-get install build-essential python zlib1g-dev libglib2.0-dev libpixman-1-dev libtool libfdt-dev
 
 Commands for a typical build:
-    ./configure --enable-debug --disable-werror --target-list="arm-softmmu"
+    ./configure --enable-debug --disable-xen --disable-werror --target-list="arm-softmmu"
     make
 
 Useful make commands when rebuilding:
     make defconfig
     make clean
 
-Note: we pass the following option to the "configure" command to
-ignore warnings (otherwise warnings will cause the build to fail):
+Notes:
+* We pass the following option to the "configure" command to
+  ignore warnings (otherwise warnings will cause the build to fail):
     --disable-werror
+* We disable xen support according to issue #42:
+    https://github.com/beckus/qemu_stm32/issues/42 
 
 The generated executable is arm-softmmu/qemu-system-arm .
 

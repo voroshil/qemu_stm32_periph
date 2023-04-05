@@ -1,3 +1,4 @@
+#include "hw/stm32_periph/gpio.h"
 #include "hw/sysbus.h"
 #include "hw/arm/stm32.h"
 #include <inttypes.h>
@@ -24,7 +25,7 @@
 
 typedef struct  {
     /* Inherited */
-    SysBusDevice busdev;
+    GPIODevice busdev;
 
     /* Properties */
     char* nss_port;
@@ -282,7 +283,7 @@ static void stm32_ledkey_class_init(ObjectClass *klass, void *data)
 }
 static TypeInfo stm32_ledkey_info = {
     .name  = TYPE_STM32_LEDKEY,
-    .parent = TYPE_DEVICE,
+    .parent = TYPE_GPIO_DEVICE,
     .instance_size  = sizeof(LedkeyState),
     .class_init = stm32_ledkey_class_init
 };

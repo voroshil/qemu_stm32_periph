@@ -6,6 +6,7 @@
 #include "exec/ioport.h"
 #include "exec/memory.h"
 #include "hw/qdev.h"
+#include "hw/arm/stm32.h"
 
 #define GPIO_NUM_IRQS 16
 
@@ -32,6 +33,7 @@ struct GPIOBus {
 
     MemoryRegion *address_space_io;
     qemu_irq *irqs;
+    stm32_periph_t  periph;
 };
 
 struct GPIODevice {

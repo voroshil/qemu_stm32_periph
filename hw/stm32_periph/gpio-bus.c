@@ -1,5 +1,6 @@
-#include "hw/sysbus.h"
 #include "hw/stm32_periph/gpio.h"
+#include "hw/sysbus.h"
+#include "monitor/monitor.h"
 
 static char *gpiobus_get_fw_dev_path(DeviceState *dev)
 {
@@ -49,11 +50,17 @@ static void gpio_device_init(Object *obj)
     dev->gpioirq[1] = -1;
 }
 
+static Property gpio_bus_properties[] = {
+    DEFINE_PROP_PERIPH_T("periph", GPIOBus, periph, STM32_PERIPH_UNDEFINED),
+    DEFINE_PROP_END_OF_LIST()
+};
+
 static void gpiobus_bridge_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->fw_name = "gpio";
+    dc->props = gpio_bus_properties;
 }
 static const TypeInfo gpiobus_bridge_info = {
     .name          = "gpiobus-bridge",

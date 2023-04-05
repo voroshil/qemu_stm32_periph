@@ -75,5 +75,7 @@ typedef struct FWCfgState FWCfgState;
 typedef struct PcGuestInfo PcGuestInfo;
 typedef struct Range Range;
 typedef struct AdapterInfo AdapterInfo;
+typedef struct GPIOBus GPIOBus;
+typedef struct GPIODevice GPIODevice;
 
 #endif /* QEMU_TYPEDEFS_H */

@@ -2,7 +2,7 @@
 #include "hw/sysbus.h"
 #include "monitor/monitor.h"
 
-static char *pcbbus_get_fw_dev_path(DeviceState *dev)
+static char *stm32_pcb_get_fw_dev_path(DeviceState *dev)
 {
     PCBDevice *d = PCB_DEVICE(dev);
     char path[40];
@@ -15,7 +15,7 @@ static char *pcbbus_get_fw_dev_path(DeviceState *dev)
 
     return g_strdup(path);
 }
-static void pcbbus_dev_print(Monitor *mon, DeviceState *dev, int indent)
+static void stm32_pcb_dev_print(Monitor *mon, DeviceState *dev, int indent)
 {
     PCBDevice *d = PCB_DEVICE(dev);
 
@@ -31,8 +31,8 @@ static void pcb_bus_class_init(ObjectClass *klass, void *data)
 {
     BusClass *k = BUS_CLASS(klass);
 
-    k->print_dev = pcbbus_dev_print;
-    k->get_fw_dev_path = pcbbus_get_fw_dev_path;
+    k->print_dev = stm32_pcb_dev_print;
+    k->get_fw_dev_path = stm32_pcb_get_fw_dev_path;
 }
 
 static const TypeInfo pcb_bus_info = {
@@ -42,7 +42,7 @@ static const TypeInfo pcb_bus_info = {
     .class_init = pcb_bus_class_init,
 };
 
-static void gpio_device_init(Object *obj)
+static void pcb_device_init(Object *obj)
 {
     PCBDevice *dev = PCB_DEVICE(obj);
 
@@ -55,37 +55,37 @@ static Property pcb_bus_properties[] = {
     DEFINE_PROP_END_OF_LIST()
 };
 
-static void pcbbus_bridge_class_init(ObjectClass *klass, void *data)
+static void stm32_pcb_bridge_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->fw_name = "gpio";
+    dc->fw_name = "pcb";
     dc->props = pcb_bus_properties;
 }
-static const TypeInfo pcbbus_bridge_info = {
-    .name          = "pcbbus-bridge",
+static const TypeInfo stm32_pcb_bridge_info = {
+    .name          = "stm32-pcb-bridge",
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(SysBusDevice),
-    .class_init    = pcbbus_bridge_class_init,
+    .class_init    = stm32_pcb_bridge_class_init,
 };
-static void gpio_device_class_init(ObjectClass *klass, void *data)
+static void pcb_device_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *k = DEVICE_CLASS(klass);
     k->bus_type = TYPE_PCB_BUS;
 }
-static const TypeInfo gpio_device_type_info = {
+static const TypeInfo pcb_device_type_info = {
     .name = TYPE_PCB_DEVICE,
     .parent = TYPE_DEVICE,
     .instance_size = sizeof(PCBDevice),
-    .instance_init = gpio_device_init,
+    .instance_init = pcb_device_init,
     .abstract = true,
     .class_size = sizeof(PCBDeviceClass),
-    .class_init = gpio_device_class_init,
+    .class_init = pcb_device_class_init,
 };
-static void pcbbus_register_types(void)
+static void stm32_pcb_register_types(void)
 {
     type_register_static(&pcb_bus_info);
-    type_register_static(&pcbbus_bridge_info);
-    type_register_static(&gpio_device_type_info);
+    type_register_static(&stm32_pcb_bridge_info);
+    type_register_static(&pcb_device_type_info);
 }
-type_init(pcbbus_register_types)
+type_init(stm32_pcb_register_types)

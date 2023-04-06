@@ -1,3 +1,0 @@
-obj-$(CONFIG_STM32) += ledkey.o
-obj-$(CONFIG_STM32) += gpio-bus.o
-

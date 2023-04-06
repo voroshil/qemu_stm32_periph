@@ -1,4 +1,4 @@
-#include "hw/stm32_periph/gpio.h"
+#include "hw/stm32-pcb/pcb.h"
 #include "hw/sysbus.h"
 #include "hw/arm/stm32.h"
 #include <inttypes.h>
@@ -25,7 +25,7 @@
 
 typedef struct  {
     /* Inherited */
-    GPIODevice busdev;
+    PCBDevice busdev;
 
     /* Properties */
     char* nss_port;
@@ -278,12 +278,10 @@ static void stm32_ledkey_class_init(ObjectClass *klass, void *data)
     dc->props = stm32_ledkey_properties;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
     dc->cannot_instantiate_with_device_add_yet = false;
-
-//    dc->bus_type = TYPE_STM32_GPIO;
 }
 static TypeInfo stm32_ledkey_info = {
     .name  = TYPE_STM32_LEDKEY,
-    .parent = TYPE_GPIO_DEVICE,
+    .parent = TYPE_PCB_DEVICE,
     .instance_size  = sizeof(LedkeyState),
     .class_init = stm32_ledkey_class_init
 };

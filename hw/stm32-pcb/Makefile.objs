@@ -1,0 +1,2 @@
+obj-$(CONFIG_STM32) += ledkey.o
+obj-$(CONFIG_STM32) += pcb-bus.o

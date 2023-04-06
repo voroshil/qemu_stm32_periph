@@ -23,20 +23,24 @@
 #define MASK_MISO (1<<BIT_MISO)
 #define MASK_MOSI (1<<BIT_MOSI)
 
+#define STM32_GPIO_INDEX(port,pin) (((port & 0xf)<<4) | (pin & 0xf))
+#define STM32_PORT_INDEX(gpio) ((gpio>>4) & 0xf)
+#define STM32_PIN_INDEX(gpio) (gpio & 0xf)
+
+#define STM32_PB12 STM32_GPIO_INDEX(STM32_GPIOB_INDEX, 12)
+#define STM32_PB13 STM32_GPIO_INDEX(STM32_GPIOB_INDEX, 13)
+#define STM32_PB14 STM32_GPIO_INDEX(STM32_GPIOB_INDEX, 14)
+#define STM32_PB15 STM32_GPIO_INDEX(STM32_GPIOB_INDEX, 15)
+
 typedef struct  {
     /* Inherited */
     PCBDevice busdev;
 
     /* Properties */
-    char* nss_port;
-    char* sck_port;
-    char* miso_port;
-    char* mosi_port;
-
-    uint8_t nss_pin;
-    uint8_t sck_pin;
-    uint8_t miso_pin;
-    uint8_t mosi_pin;
+    uint8_t nss_gpio;
+    uint8_t sck_gpio;
+    uint8_t miso_gpio;
+    uint8_t mosi_gpio;
 
     /* Private */
 
@@ -187,12 +191,12 @@ static void stm32_ledkey_reset(DeviceState *dev)
 }
 
 
-static DeviceState* find_gpio(char* name, DeviceState* gpio_a,DeviceState* gpio_b,DeviceState* gpio_c){
-    if (!name || (name[0] == 'b' && name[1] == 0)){
-      return gpio_b;
-    }else if (name[0] == 'a' && name[1] == 0){
+static DeviceState* find_gpio(uint8_t gpio_param, DeviceState* gpio_a,DeviceState* gpio_b,DeviceState* gpio_c){
+    if (STM32_PORT_INDEX(gpio_param) == 0){
       return gpio_a;
-    }else if (name[0] == 'c' && name[1] == 0){
+    }else if (STM32_PORT_INDEX(gpio_param) == 1){
+      return gpio_b;
+    }else if (STM32_PORT_INDEX(gpio_param) == 2){
       return gpio_c;
     }else{
       return 0;
@@ -208,64 +212,61 @@ static void stm32_ledkey_realize(DeviceState *dev, Error **errp)
     DeviceState *gpio_c = DEVICE(object_resolve_path("/machine/stm32/gpio[c]", NULL));
 
 
-    DeviceState *gpio_nss = find_gpio(s->nss_port, gpio_a, gpio_b, gpio_c);
-    DeviceState *gpio_sck = find_gpio(s->sck_port, gpio_a, gpio_b, gpio_c);
-    DeviceState *gpio_miso = find_gpio(s->miso_port, gpio_a, gpio_b, gpio_c);
-    DeviceState *gpio_mosi = find_gpio(s->mosi_port, gpio_a, gpio_b, gpio_c);
+    DeviceState *gpio_nss = find_gpio(s->nss_gpio, gpio_a, gpio_b, gpio_c);
+    DeviceState *gpio_sck = find_gpio(s->sck_gpio, gpio_a, gpio_b, gpio_c);
+    DeviceState *gpio_miso = find_gpio(s->miso_gpio, gpio_a, gpio_b, gpio_c);
+    DeviceState *gpio_mosi = find_gpio(s->mosi_gpio, gpio_a, gpio_b, gpio_c);
 
     if (!gpio_nss){
-      error_setg(errp, "Unsupported GPIO port for NSS: %s", s->nss_port);
+      error_setg(errp, "Unsupported GPIO port for NSS: 0x%02x", s->nss_gpio);
       return;
     }
     if (!gpio_sck){
-      error_setg(errp, "Unsupported GPIO port for SCK: %s", s->sck_port);
+      error_setg(errp, "Unsupported GPIO port for SCK: 0x%02x", s->sck_gpio);
       return;
     }
     if (!gpio_miso){
-      error_setg(errp, "Unsupported GPIO port for MISO: %s", s->miso_port);
+      error_setg(errp, "Unsupported GPIO port for MISO: 0x%02x", s->miso_gpio);
       return;
     }
     if (!gpio_mosi){
-      error_setg(errp, "Unsupported GPIO port for SCK: %s", s->mosi_port);
+      error_setg(errp, "Unsupported GPIO port for SCK: 0x%02x", s->mosi_gpio);
       return;
     }
-    if (s->nss_pin >= STM32_GPIO_PIN_COUNT){
-      error_setg(errp, "Unsupported GPIO pin for NSS: %d", s->nss_pin);
+    if (STM32_PIN_INDEX(s->nss_gpio) >= STM32_GPIO_PIN_COUNT){
+      error_setg(errp, "Unsupported GPIO pin for NSS: 0x%02x", s->nss_gpio);
       return;
     }
-    if (s->sck_pin >= STM32_GPIO_PIN_COUNT){
-      error_setg(errp, "Unsupported GPIO pin for SCK: %d", s->sck_pin);
+    if (STM32_PIN_INDEX(s->sck_gpio) >= STM32_GPIO_PIN_COUNT){
+      error_setg(errp, "Unsupported GPIO pin for SCK: 0x%02x", s->nss_gpio);
       return;
     }
-    if (s->mosi_pin >= STM32_GPIO_PIN_COUNT){
-      error_setg(errp, "Unsupported GPIO pin for MOSI: %d", s->mosi_pin);
+    if (STM32_PIN_INDEX(s->miso_gpio) >= STM32_GPIO_PIN_COUNT){
+      error_setg(errp, "Unsupported GPIO pin for MISO: 0x%02x", s->miso_gpio);
       return;
     }
-    if (s->miso_pin >= STM32_GPIO_PIN_COUNT){
-      error_setg(errp, "Unsupported GPIO pin for MISO: %d", s->miso_pin);
+    if (STM32_PIN_INDEX(s->mosi_gpio) >= STM32_GPIO_PIN_COUNT){
+      error_setg(errp, "Unsupported GPIO pin for MOSI: 0x%02x", s->mosi_gpio);
       return;
     }
 
     gpio_irq = qemu_allocate_irqs(stm32_ledkey_irq_handler, (void *)s, 4);
 
-    qdev_connect_gpio_out(gpio_nss, s->nss_pin, gpio_irq[BIT_NSS]);
-    qdev_connect_gpio_out(gpio_sck, s->sck_pin, gpio_irq[BIT_SCK]);
-    qdev_connect_gpio_out(gpio_miso, s->miso_pin, gpio_irq[BIT_MISO]);
-    qdev_connect_gpio_out(gpio_mosi, s->mosi_pin, gpio_irq[BIT_MOSI]);
+    qdev_connect_gpio_out(gpio_nss, STM32_PIN_INDEX(s->nss_gpio), gpio_irq[BIT_NSS]);
+    qdev_connect_gpio_out(gpio_sck, STM32_PIN_INDEX(s->sck_gpio), gpio_irq[BIT_SCK]);
+    qdev_connect_gpio_out(gpio_miso, STM32_PIN_INDEX(s->miso_gpio), gpio_irq[BIT_MISO]);
+    qdev_connect_gpio_out(gpio_mosi, STM32_PIN_INDEX(s->mosi_gpio), gpio_irq[BIT_MOSI]);
 
     stm32_ledkey_reset((DeviceState *)s);
 
 }
 
+
 static Property stm32_ledkey_properties[] = {
-    DEFINE_PROP_STRING("nss-port", LedkeyState, nss_port),
-    DEFINE_PROP_STRING("sck-port", LedkeyState, sck_port),
-    DEFINE_PROP_STRING("miso-port", LedkeyState, miso_port),
-    DEFINE_PROP_STRING("mosi-port", LedkeyState, mosi_port),
-    DEFINE_PROP_UINT8("nss-pin", LedkeyState, nss_pin, 12),
-    DEFINE_PROP_UINT8("sck-pin", LedkeyState, sck_pin, 13),
-    DEFINE_PROP_UINT8("miso-pin", LedkeyState, miso_pin, 14),
-    DEFINE_PROP_UINT8("mosi-pin", LedkeyState, mosi_pin, 15),
+    DEFINE_PROP_UINT8("nss-in", LedkeyState, nss_gpio, STM32_PB12),
+    DEFINE_PROP_UINT8("sck-in", LedkeyState, sck_gpio, STM32_PB13),
+    DEFINE_PROP_UINT8("miso-in", LedkeyState, miso_gpio, STM32_PB14),
+    DEFINE_PROP_UINT8("mosi-out", LedkeyState, mosi_gpio, STM32_PB15),
     DEFINE_PROP_END_OF_LIST()
 };
 
@@ -277,7 +278,6 @@ static void stm32_ledkey_class_init(ObjectClass *klass, void *data)
     dc->reset = stm32_ledkey_reset;
     dc->props = stm32_ledkey_properties;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
-    dc->cannot_instantiate_with_device_add_yet = false;
 }
 static TypeInfo stm32_ledkey_info = {
     .name  = TYPE_STM32_LEDKEY,

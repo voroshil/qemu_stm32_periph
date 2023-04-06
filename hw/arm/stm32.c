@@ -385,9 +385,4 @@ void stm32_init(
     sysbus_connect_irq(SYS_BUS_DEVICE(dma1), 5, pic[STM32_DMA1_STREAM5_IRQ]);
     sysbus_connect_irq(SYS_BUS_DEVICE(dma1), 6, pic[STM32_DMA1_STREAM6_IRQ]);
     sysbus_connect_irq(SYS_BUS_DEVICE(dma1), 7, pic[STM32_DMA1_STREAM7_IRQ]);
-
-    DeviceState *pcb_bridge_dev = qdev_create(NULL, "stm32-pcb-bridge");
-    qdev_init_nofail(pcb_bridge_dev);
-//    PCBBus* pcbbus = PCB_BUS(qbus_create(TYPE_PCB_BUS, pcb_bridge_dev, NULL));
-    qbus_create(TYPE_PCB_BUS, pcb_bridge_dev, NULL);
 }

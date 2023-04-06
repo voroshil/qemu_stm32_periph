@@ -8,6 +8,9 @@
 #include "hw/qdev.h"
 #include "hw/arm/stm32.h"
 
+typedef struct PCBBus PCBBus;
+typedef struct PCBDevice PCBDevice;
+
 #define TYPE_PCB_DEVICE "pcb-device"
 #define PCB_DEVICE(obj) \
      OBJECT_CHECK(PCBDevice, (obj), TYPE_PCB_DEVICE)

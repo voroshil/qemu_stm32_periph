@@ -23,7 +23,7 @@
 #define MASK_MISO (1<<BIT_MISO)
 #define MASK_MOSI (1<<BIT_MOSI)
 
-#define STM32_GPIO_INDEX(port,pin) (((port & 0xf)<<4) | (pin & 0xf))
+#define STM32_GPIO_INDEX(port,pin) ((uint8_t)(((port & 0xf)<<4) | (pin & 0xf)))
 #define STM32_PORT_INDEX(gpio) ((gpio>>4) & 0xf)
 #define STM32_PIN_INDEX(gpio) (gpio & 0xf)
 
@@ -37,10 +37,10 @@ typedef struct  {
     PCBDevice busdev;
 
     /* Properties */
-    uint8_t nss_gpio;
-    uint8_t sck_gpio;
-    uint8_t miso_gpio;
-    uint8_t mosi_gpio;
+    uint16_t nss_gpio;
+    uint16_t sck_gpio;
+    uint16_t miso_gpio;
+    uint16_t mosi_gpio;
 
     /* Private */
 
@@ -259,14 +259,15 @@ static void stm32_ledkey_realize(DeviceState *dev, Error **errp)
 
     stm32_ledkey_reset((DeviceState *)s);
 
+   printf("XXX:id=%s\n", dev->id);
 }
 
 
 static Property stm32_ledkey_properties[] = {
-    DEFINE_PROP_UINT8("nss-in", LedkeyState, nss_gpio, STM32_PB12),
-    DEFINE_PROP_UINT8("sck-in", LedkeyState, sck_gpio, STM32_PB13),
-    DEFINE_PROP_UINT8("miso-in", LedkeyState, miso_gpio, STM32_PB14),
-    DEFINE_PROP_UINT8("mosi-out", LedkeyState, mosi_gpio, STM32_PB15),
+    DEFINE_PROP_UINT16("nss-in", LedkeyState, nss_gpio, STM32_PB12),
+    DEFINE_PROP_UINT16("sck-in", LedkeyState, sck_gpio, STM32_PB13),
+    DEFINE_PROP_UINT16("miso-in", LedkeyState, miso_gpio, STM32_PB14),
+    DEFINE_PROP_UINT16("mosi-out", LedkeyState, mosi_gpio, STM32_PB15),
     DEFINE_PROP_END_OF_LIST()
 };
 

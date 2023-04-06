@@ -33,6 +33,7 @@ static void pcb_bus_class_init(ObjectClass *klass, void *data)
 
     k->print_dev = stm32_pcb_dev_print;
     k->get_fw_dev_path = stm32_pcb_get_fw_dev_path;
+    k->max_dev = 256;
 }
 
 static const TypeInfo pcb_bus_info = {
@@ -50,22 +51,32 @@ static void pcb_device_init(Object *obj)
     dev->pcbirq[1] = -1;
 }
 
-static Property pcb_bus_properties[] = {
-    DEFINE_PROP_PERIPH_T("periph", PCBBus, periph, STM32_PERIPH_UNDEFINED),
-    DEFINE_PROP_END_OF_LIST()
-};
+//static Property pcb_bus_properties[] = {
+//    DEFINE_PROP_PERIPH_T("periph", PCBBus, periph, STM32_PERIPH_UNDEFINED),
+//    DEFINE_PROP_END_OF_LIST()
+//};
 
 static void stm32_pcb_bridge_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    dc->desc = "STM32 GPIO to PCB Bridge";
+    set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
     dc->fw_name = "pcb";
-    dc->props = pcb_bus_properties;
+//    dc->props = pcb_bus_properties;
+    dc->cannot_instantiate_with_device_add_yet = false;
+}
+static void stm32_pcb_bridge_init(Object *obj)
+{
+    SysBusDevice *dev = SYS_BUS_DEVICE(obj);
+
+    qbus_create(TYPE_PCB_BUS, (DeviceState*)dev, NULL);
 }
 static const TypeInfo stm32_pcb_bridge_info = {
     .name          = "stm32-pcb-bridge",
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(SysBusDevice),
+    .instance_init = stm32_pcb_bridge_init,
     .class_init    = stm32_pcb_bridge_class_init,
 };
 static void pcb_device_class_init(ObjectClass *klass, void *data)

@@ -23,10 +23,6 @@
 #define MASK_MISO (1<<BIT_MISO)
 #define MASK_MOSI (1<<BIT_MOSI)
 
-#define STM32_GPIO_INDEX(port,pin) ((uint8_t)(((port & 0xf)<<4) | (pin & 0xf)))
-#define STM32_PORT_INDEX(gpio) ((gpio>>4) & 0xf)
-#define STM32_PIN_INDEX(gpio) (gpio & 0xf)
-
 #define STM32_PB12 STM32_GPIO_INDEX(STM32_GPIOB_INDEX, 12)
 #define STM32_PB13 STM32_GPIO_INDEX(STM32_GPIOB_INDEX, 13)
 #define STM32_PB14 STM32_GPIO_INDEX(STM32_GPIOB_INDEX, 14)

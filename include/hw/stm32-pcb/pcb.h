@@ -47,4 +47,9 @@ struct PCBDevice {
     int ioport_id;
 };
 
+
+#define STM32_GPIO_INDEX(port,pin) ((uint8_t)(((port & 0xf)<<4) | (pin & 0xf)))
+#define STM32_PORT_INDEX(gpio) ((gpio>>4) & 0xf)
+#define STM32_PIN_INDEX(gpio) (gpio & 0xf)
+
 #endif

@@ -23,7 +23,6 @@
 #include "exec/address-spaces.h"
 #include "exec/gdbstub.h"
 #include "sysemu/blockdev.h" // drive_get
-#include "hw/stm32-pcb/pcb.h"
 
 /* DEFINITIONS */
 

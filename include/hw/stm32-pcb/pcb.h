@@ -34,7 +34,9 @@ struct PCBBus {
 
     MemoryRegion *address_space_io;
     qemu_irq *irqs;
+    int nirqs;
     stm32_periph_t  periph;
+    void (*gpio_connect)(PCBBus* bus, uint16_t n, qemu_irq irq);
 };
 
 struct PCBDevice {

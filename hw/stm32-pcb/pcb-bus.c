@@ -1,6 +1,19 @@
 #include "hw/stm32-pcb/pcb.h"
 #include "hw/sysbus.h"
 #include "monitor/monitor.h"
+#include "hw/irq.h"
+
+#define TYPE_PCB_BRIDGE "stm32-pcb-bridge"
+
+
+typedef struct {
+  SysBusDevice parent_obj;
+
+  PCBBus pcb_bus;
+  qemu_irq out[STM32_GPIO_COUNT * STM32_GPIO_PIN_COUNT];
+} PCBBridgeDevice;
+
+#define PCB_BRIDGE(obj) OBJECT_CHECK(PCBBridgeDevice, (obj), TYPE_PCB_BRIDGE)
 
 static char *stm32_pcb_get_fw_dev_path(DeviceState *dev)
 {
@@ -66,16 +79,66 @@ static void stm32_pcb_bridge_class_init(ObjectClass *klass, void *data)
 //    dc->props = pcb_bus_properties;
     dc->cannot_instantiate_with_device_add_yet = false;
 }
+
+static void stm32_pcb_bridge_irq_handler(void* opaque, int n, int level){
+    PCBBridgeDevice *s = (PCBBridgeDevice*)opaque;
+    if (s->out[n]) {
+        qemu_set_irq(s->out[n], level);
+    }
+}
+static void stm32_pcb_gpio_connect(PCBBus* bus, uint16_t gpio, qemu_irq irq){
+    if (gpio >= STM32_GPIO_COUNT * STM32_GPIO_PIN_COUNT)
+      return;
+
+    PCBBridgeDevice *dev = PCB_BRIDGE(BUS(bus)->parent);
+
+    if (dev->out[gpio]){
+        dev->out[gpio] = qemu_irq_split(dev->out[gpio], irq);
+    }else{
+        dev->out[gpio] = irq;
+    }
+}
 static void stm32_pcb_bridge_init(Object *obj)
 {
-    SysBusDevice *dev = SYS_BUS_DEVICE(obj);
+    int i;
+    PCBBridgeDevice *s = PCB_BRIDGE(obj);
 
-    qbus_create(TYPE_PCB_BUS, (DeviceState*)dev, NULL);
+    qbus_create_inplace(&s->pcb_bus, sizeof(s->pcb_bus), TYPE_PCB_BUS,
+                        DEVICE(s), NULL);
+
+    s->pcb_bus.gpio_connect = stm32_pcb_gpio_connect;
+
+    qdev_init_gpio_out(DEVICE(s), s->out, STM32_GPIO_COUNT * STM32_GPIO_PIN_COUNT);
+
+
+    DeviceState *gpio_a = DEVICE(object_resolve_path("/machine/stm32/gpio[a]", NULL));
+    DeviceState *gpio_b = DEVICE(object_resolve_path("/machine/stm32/gpio[b]", NULL));
+    DeviceState *gpio_c = DEVICE(object_resolve_path("/machine/stm32/gpio[c]", NULL));
+
+    qemu_irq* irqs = qemu_allocate_irqs(stm32_pcb_bridge_irq_handler, (void *)s, STM32_GPIO_COUNT * STM32_GPIO_PIN_COUNT);
+
+    for(i=0; i<STM32_GPIO_PIN_COUNT; i++){
+      if (gpio_a){ 
+          qdev_connect_gpio_out(gpio_a, i, irqs[i]);
+      }
+      if (gpio_b){
+          qdev_connect_gpio_out(gpio_b, i, irqs[STM32_GPIO_PIN_COUNT+i]);
+      }
+      if (gpio_c){
+          qdev_connect_gpio_out(gpio_c, i, irqs[2*STM32_GPIO_PIN_COUNT+i]);
+      }
+    }
+    for(i=0; i<STM32_GPIO_COUNT * STM32_GPIO_PIN_COUNT; i++){
+      s->out[i] = 0;
+    }
+    s->pcb_bus.irqs = irqs;
+    s->pcb_bus.nirqs = STM32_GPIO_COUNT * STM32_GPIO_PIN_COUNT;
+
 }
 static const TypeInfo stm32_pcb_bridge_info = {
-    .name          = "stm32-pcb-bridge",
+    .name          = TYPE_PCB_BRIDGE,
     .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(SysBusDevice),
+    .instance_size = sizeof(PCBBridgeDevice),
     .instance_init = stm32_pcb_bridge_init,
     .class_init    = stm32_pcb_bridge_class_init,
 };

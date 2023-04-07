@@ -57,31 +57,12 @@ static void stm32_led_reset(DeviceState *dev)
     s->gpio_value = 0;
 }
 
-
-static DeviceState* find_gpio(uint8_t gpio_param, DeviceState* gpio_a,DeviceState* gpio_b,DeviceState* gpio_c){
-    if (STM32_PORT_INDEX(gpio_param) == 0){
-      return gpio_a;
-    }else if (STM32_PORT_INDEX(gpio_param) == 1){
-      return gpio_b;
-    }else if (STM32_PORT_INDEX(gpio_param) == 2){
-      return gpio_c;
-    }else{
-      return 0;
-    }
-}
 static void stm32_led_realize(DeviceState *dev, Error **errp)
 {
-    qemu_irq *gpio_irq;
     LedState *s = STM32_LED(dev);
+    PCBBus* bus = PCB_BUS(dev->parent_bus);
 
-    DeviceState *gpio_a = DEVICE(object_resolve_path("/machine/stm32/gpio[a]", NULL));
-    DeviceState *gpio_b = DEVICE(object_resolve_path("/machine/stm32/gpio[b]", NULL));
-    DeviceState *gpio_c = DEVICE(object_resolve_path("/machine/stm32/gpio[c]", NULL));
-
-
-    DeviceState *gpio_data = find_gpio(s->data_gpio, gpio_a, gpio_b, gpio_c);
-
-    if (!gpio_data){
+    if (STM32_PORT_INDEX(s->data_gpio) >= STM32_GPIO_COUNT){
       error_setg(errp, "Unsupported GPIO port for DATA: 0x%02x", s->data_gpio);
       return;
     }
@@ -90,9 +71,9 @@ static void stm32_led_realize(DeviceState *dev, Error **errp)
       return;
     }
 
-    gpio_irq = qemu_allocate_irqs(stm32_led_irq_handler, (void *)s, 1);
+    qemu_irq* gpio_irq = qemu_allocate_irqs(stm32_led_irq_handler, (void *)s, 1);
 
-    qdev_connect_gpio_out(gpio_data, STM32_PIN_INDEX(s->data_gpio), gpio_irq[0]);
+    bus->gpio_connect(bus, s->data_gpio, gpio_irq[0]);
 
     stm32_led_reset((DeviceState *)s);
 }

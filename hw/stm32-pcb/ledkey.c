@@ -185,47 +185,24 @@ static void stm32_ledkey_reset(DeviceState *dev)
     s->write_mode = MODE_WRITE;
     s->autoincrement = INCREMENT_OFF;
 }
-
-
-static DeviceState* find_gpio(uint8_t gpio_param, DeviceState* gpio_a,DeviceState* gpio_b,DeviceState* gpio_c){
-    if (STM32_PORT_INDEX(gpio_param) == 0){
-      return gpio_a;
-    }else if (STM32_PORT_INDEX(gpio_param) == 1){
-      return gpio_b;
-    }else if (STM32_PORT_INDEX(gpio_param) == 2){
-      return gpio_c;
-    }else{
-      return 0;
-    }
-}
 static void stm32_ledkey_realize(DeviceState *dev, Error **errp)
 {
-    qemu_irq *gpio_irq;
     LedkeyState *s = STM32_LEDKEY(dev);
+    PCBBus* bus = PCB_BUS(dev->parent_bus);
 
-    DeviceState *gpio_a = DEVICE(object_resolve_path("/machine/stm32/gpio[a]", NULL));
-    DeviceState *gpio_b = DEVICE(object_resolve_path("/machine/stm32/gpio[b]", NULL));
-    DeviceState *gpio_c = DEVICE(object_resolve_path("/machine/stm32/gpio[c]", NULL));
-
-
-    DeviceState *gpio_nss = find_gpio(s->nss_gpio, gpio_a, gpio_b, gpio_c);
-    DeviceState *gpio_sck = find_gpio(s->sck_gpio, gpio_a, gpio_b, gpio_c);
-    DeviceState *gpio_miso = find_gpio(s->miso_gpio, gpio_a, gpio_b, gpio_c);
-    DeviceState *gpio_mosi = find_gpio(s->mosi_gpio, gpio_a, gpio_b, gpio_c);
-
-    if (!gpio_nss){
+    if (STM32_PORT_INDEX(s->nss_gpio) >= STM32_GPIO_COUNT){
       error_setg(errp, "Unsupported GPIO port for NSS: 0x%02x", s->nss_gpio);
       return;
     }
-    if (!gpio_sck){
+    if (STM32_PORT_INDEX(s->sck_gpio) >= STM32_GPIO_COUNT){
       error_setg(errp, "Unsupported GPIO port for SCK: 0x%02x", s->sck_gpio);
       return;
     }
-    if (!gpio_miso){
+    if (STM32_PORT_INDEX(s->miso_gpio) >= STM32_GPIO_COUNT){
       error_setg(errp, "Unsupported GPIO port for MISO: 0x%02x", s->miso_gpio);
       return;
     }
-    if (!gpio_mosi){
+    if (STM32_PORT_INDEX(s->mosi_gpio) >= STM32_GPIO_COUNT){
       error_setg(errp, "Unsupported GPIO port for SCK: 0x%02x", s->mosi_gpio);
       return;
     }
@@ -246,16 +223,14 @@ static void stm32_ledkey_realize(DeviceState *dev, Error **errp)
       return;
     }
 
-    gpio_irq = qemu_allocate_irqs(stm32_ledkey_irq_handler, (void *)s, 4);
+    qemu_irq *gpio_irq = qemu_allocate_irqs(stm32_ledkey_irq_handler, (void *)s, 4);
 
-    qdev_connect_gpio_out(gpio_nss, STM32_PIN_INDEX(s->nss_gpio), gpio_irq[BIT_NSS]);
-    qdev_connect_gpio_out(gpio_sck, STM32_PIN_INDEX(s->sck_gpio), gpio_irq[BIT_SCK]);
-    qdev_connect_gpio_out(gpio_miso, STM32_PIN_INDEX(s->miso_gpio), gpio_irq[BIT_MISO]);
-    qdev_connect_gpio_out(gpio_mosi, STM32_PIN_INDEX(s->mosi_gpio), gpio_irq[BIT_MOSI]);
+    bus->gpio_connect(bus, s->nss_gpio, gpio_irq[BIT_NSS]);
+    bus->gpio_connect(bus, s->sck_gpio, gpio_irq[BIT_SCK]);
+    bus->gpio_connect(bus, s->miso_gpio, gpio_irq[BIT_MISO]);
+    bus->gpio_connect(bus, s->mosi_gpio, gpio_irq[BIT_MOSI]);
 
     stm32_ledkey_reset((DeviceState *)s);
-
-   printf("XXX:id=%s\n", dev->id);
 }
 
 

@@ -76,6 +76,9 @@ struct Stm32Gpio {
 /* Trigger fired when a GPIO input pin changes state (based
  * on an external stimulus from the machine).
  */
+// Logic ONE threshold for 3.3 supply voltage (according to 6.3.14 of Reference Manual)
+#define V_IH_MV 1880
+#define V_VDDA_MV 3300
 static void stm32_gpio_in_trigger(void *opaque, int irq, int level)
 {
     Stm32Gpio *s = opaque;
@@ -85,12 +88,19 @@ static void stm32_gpio_in_trigger(void *opaque, int irq, int level)
     assert(level >= 0);
 
     /* Update internal pin state. */
+    uint8_t config = stm32_gpio_get_config_bits(s, pin);
+    if(config == STM32_GPIO_IN_ANALOG){
+        s->voltage[pin] = level;
+        // For digital pin compatibility
+        level = level >= V_IH_MV ? 1 : 0;
+    }else{
+        s->voltage[pin] = level ? V_VDDA_MV : 0;
+    }
     s->in &= ~(1 << pin);
     s->in |= (level ? 1 : 0) << pin;
 
     /* Propagate the trigger to the input IRQs. */
     qemu_set_irq(s->in_irq[pin], level);
-    s->voltage[pin] = level;
 }
 
 

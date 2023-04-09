@@ -25,6 +25,7 @@ typedef struct PCBDevice PCBDevice;
 
 typedef struct PCBDeviceClass {
     DeviceClass parent_class;
+    DeviceRealize parent_realize;
 } PCBDeviceClass;
 
 struct PCBBus {
@@ -34,8 +35,10 @@ struct PCBBus {
 
     MemoryRegion *address_space_io;
     qemu_irq *irqs;
+    DeviceState* devices[256];
+    uint8_t next_addr;
+
     int nirqs;
-    stm32_periph_t  periph;
     void (*gpio_connect)(PCBBus* bus, uint16_t n, qemu_irq irq);
     void (*gpio_set_value)(PCBBus* bus, uint16_t n, int value);
 };
@@ -45,9 +48,7 @@ struct PCBDevice {
     DeviceState parent_obj;
     /*< public >*/
 
-    uint32_t pcbirq[2];
-    int nirqs;
-    int ioport_id;
+    uint8_t addr;
 };
 
 

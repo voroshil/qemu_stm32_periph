@@ -189,6 +189,10 @@ static void stm32_ledkey_realize(DeviceState *dev, Error **errp)
 {
     LedkeyState *s = STM32_LEDKEY(dev);
     PCBBus* bus = PCB_BUS(dev->parent_bus);
+    PCBDeviceClass *pc = PCB_DEVICE_GET_CLASS(dev);
+    if (pc->parent_realize){
+      pc->parent_realize(dev, errp);
+    }
 
     if (STM32_PORT_INDEX(s->nss_gpio) >= STM32_GPIO_COUNT){
       error_setg(errp, "Unsupported GPIO port for NSS: 0x%02x", s->nss_gpio);
@@ -246,6 +250,8 @@ static void stm32_ledkey_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    PCBDeviceClass * pc = PCB_DEVICE_CLASS(klass);
+    pc->parent_realize = dc->realize;
     dc->realize = stm32_ledkey_realize;
     dc->reset = stm32_ledkey_reset;
     dc->props = stm32_ledkey_properties;

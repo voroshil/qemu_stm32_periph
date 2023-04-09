@@ -59,6 +59,10 @@ static void stm32_generator_timer_trigger(void* opaque, int n, int level){
 static void stm32_generator_realize(DeviceState *dev, Error **errp)
 {
     GeneratorState *s = STM32_GENERATOR(dev);
+    PCBDeviceClass *pc = PCB_DEVICE_GET_CLASS(dev);
+    if (pc->parent_realize){
+      pc->parent_realize(dev, errp);
+    }
 
     if (STM32_PORT_INDEX(s->data_gpio) >= STM32_GPIO_COUNT){
       error_setg(errp, "Unsupported GPIO port for DATA: 0x%02x", s->data_gpio);
@@ -89,6 +93,8 @@ static void stm32_generator_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    PCBDeviceClass * pc = PCB_DEVICE_CLASS(klass);
+    pc->parent_realize = dc->realize;
     dc->realize = stm32_generator_realize;
     dc->props = stm32_generator_properties;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);

@@ -17,38 +17,11 @@ typedef struct {
 
 #define PCB_BRIDGE(obj) OBJECT_CHECK(PCBBridgeDevice, (obj), TYPE_PCB_BRIDGE)
 
-static char *stm32_pcb_get_fw_dev_path(DeviceState *dev)
-{
-    PCBDevice *d = PCB_DEVICE(dev);
-    char path[40];
-    int off;
-
-    off = snprintf(path, sizeof(path), "%s", qdev_fw_name(dev));
-    if (d->ioport_id) {
-        snprintf(path + off, sizeof(path) - off, "@%04x", d->ioport_id);
-    }
-
-    return g_strdup(path);
-}
-static void stm32_pcb_dev_print(Monitor *mon, DeviceState *dev, int indent)
-{
-    PCBDevice *d = PCB_DEVICE(dev);
-
-    if (d->pcbirq[1] != -1) {
-        monitor_printf(mon, "%*sgpio irqs %d,%d\n", indent, "",
-                       d->pcbirq[0], d->pcbirq[1]);
-    } else if (d->pcbirq[0] != -1) {
-        monitor_printf(mon, "%*sgpio irq %d\n", indent, "",
-                       d->pcbirq[0]);
-    }
-}
 static void pcb_bus_class_init(ObjectClass *klass, void *data)
 {
     BusClass *k = BUS_CLASS(klass);
 
-    k->print_dev = stm32_pcb_dev_print;
-    k->get_fw_dev_path = stm32_pcb_get_fw_dev_path;
-    k->max_dev = 256;
+    k->max_dev = 255;
 }
 
 static const TypeInfo pcb_bus_info = {
@@ -58,12 +31,29 @@ static const TypeInfo pcb_bus_info = {
     .class_init = pcb_bus_class_init,
 };
 
-static void pcb_device_init(Object *obj)
+static void pcb_device_realize(DeviceState *dev, Error **errp)
 {
-    PCBDevice *dev = PCB_DEVICE(obj);
+    PCBDevice *pd = PCB_DEVICE(dev);
 
-    dev->pcbirq[0] = -1;
-    dev->pcbirq[1] = -1;
+    PCBBus *bus = PCB_BUS(dev->parent_bus);
+
+    if (pd->addr && bus->devices[pd->addr]){
+        error_setg(errp, "Address already in use in PCB bus: 0x%02x", pd->addr);
+        return;
+    }else if(pd->addr){
+      bus->devices[pd->addr] = dev;
+    }else{
+      // find next free addr
+      for(; bus->next_addr && bus->devices[bus->next_addr]; bus->next_addr++);
+      if (bus->next_addr == 0){
+        error_setg(errp, "No free address in PCB bus");
+        return;
+      }
+      qdev_prop_set_uint8(dev, "addr", bus->next_addr);
+
+      bus->devices[pd->addr] = dev;
+      bus->next_addr++;
+    }
 }
 
 //static Property pcb_bus_properties[] = {
@@ -134,6 +124,7 @@ static void stm32_pcb_bridge_init(Object *obj)
 
     s->pcb_bus.gpio_connect = stm32_pcb_gpio_connect;
     s->pcb_bus.gpio_set_value = stm32_pcb_gpio_set_value;
+    s->pcb_bus.next_addr=1;
 
     qdev_init_gpio_out(DEVICE(s), s->out, STM32_GPIO_COUNT * STM32_GPIO_PIN_COUNT);
 
@@ -160,7 +151,6 @@ static void stm32_pcb_bridge_init(Object *obj)
     }
     s->pcb_bus.irqs = irqs;
     s->pcb_bus.nirqs = STM32_GPIO_COUNT * STM32_GPIO_PIN_COUNT;
-
 }
 static const TypeInfo stm32_pcb_bridge_info = {
     .name          = TYPE_PCB_BRIDGE,
@@ -169,16 +159,22 @@ static const TypeInfo stm32_pcb_bridge_info = {
     .instance_init = stm32_pcb_bridge_init,
     .class_init    = stm32_pcb_bridge_class_init,
 };
+
+static Property pcb_device_properties[] = {
+    DEFINE_PROP_UINT8("addr", PCBDevice, addr, 0),
+    DEFINE_PROP_END_OF_LIST()
+};
 static void pcb_device_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *k = DEVICE_CLASS(klass);
     k->bus_type = TYPE_PCB_BUS;
+    k->realize = pcb_device_realize;
+    k->props = pcb_device_properties;
 }
 static const TypeInfo pcb_device_type_info = {
     .name = TYPE_PCB_DEVICE,
     .parent = TYPE_DEVICE,
     .instance_size = sizeof(PCBDevice),
-    .instance_init = pcb_device_init,
     .abstract = true,
     .class_size = sizeof(PCBDeviceClass),
     .class_init = pcb_device_class_init,

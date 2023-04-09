@@ -283,6 +283,11 @@ uint8_t stm32_gpio_get_config_bits(Stm32Gpio *s, unsigned pin);
 
 
 
+/* For ADC integration with external PCB
+ * Return voltage level (between 0 and Vdda) for analog input pin.
+ * For other pins (digital input or output) return value is always 0
+ */
+uint16_t stm32_gpio_get_voltage(Stm32Gpio * s, unsigned pin);
 
 
 

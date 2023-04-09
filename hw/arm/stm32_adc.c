@@ -710,6 +710,28 @@ static void stm32_adc_start_conv(Stm32Adc *s)
       else if(channel_number==17){
       s->ADC_DR= (s->Vref=rand()%(s->Vdda-2400+1) + 2400); //Vref [2400 Vdda] mv
       }
+      else if(channel_number<16){
+        int ADC_periph,ADC_pin;
+        if(channel_number<=15 && channel_number>=10){
+            ADC_periph=STM32_GPIOC;
+            ADC_pin=channel_number-10; //PC(0-5) IN10-IN15
+        }else if(channel_number==9 || channel_number==8){
+            ADC_periph=STM32_GPIOB;
+            ADC_pin=channel_number-8; //PB(0-1) IN8-IN9
+        }else{
+            ADC_periph=STM32_GPIOA;
+            ADC_pin=channel_number; //PA(0-7) IN0-IN7
+        }
+        Stm32Gpio *gpio_dev = s->stm32_gpio[STM32_GPIO_INDEX_FROM_PERIPH(ADC_periph)];
+        int voltage = stm32_gpio_get_voltage(gpio_dev, ADC_pin);
+        if (voltage > s->Vdda){
+            voltage = s->Vdda;
+        }
+        if (voltage < 0){
+            voltage = 0;
+        }
+        s->ADC_DR = ((int)(1024. * voltage)/s->Vdda);
+      }
       else{
       s->ADC_DR=((int)(1024.*(sin(2*M_PI*qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)/1e9)+1.))&0xfff);
       }

@@ -56,6 +56,7 @@ struct Stm32Gpio {
 
     uint16_t in;
     uint16_t dir_mask; /* input = 0, output = 1 */
+    int voltage[STM32_GPIO_PIN_COUNT];
 
     /* IRQs used to communicate with the machine implementation.
      * There is one IRQ for each pin.  Note that for pins configured
@@ -81,6 +82,7 @@ static void stm32_gpio_in_trigger(void *opaque, int irq, int level)
     unsigned pin = irq;
 
     assert(pin < STM32_GPIO_PIN_COUNT);
+    assert(level >= 0);
 
     /* Update internal pin state. */
     s->in &= ~(1 << pin);
@@ -88,6 +90,7 @@ static void stm32_gpio_in_trigger(void *opaque, int irq, int level)
 
     /* Propagate the trigger to the input IRQs. */
     qemu_set_irq(s->in_irq[pin], level);
+    s->voltage[pin] = level;
 }
 
 
@@ -301,6 +304,18 @@ uint8_t stm32_gpio_get_mode_bits(Stm32Gpio *s, unsigned pin) {
     return stm32_gpio_get_pin_config(s, pin) & 0x3;
 }
 
+uint16_t stm32_gpio_get_voltage(Stm32Gpio *s, unsigned pin) {
+    assert(pin < STM32_GPIO_PIN_COUNT);
+
+    if(s->dir_mask & pin){
+        return 0;
+    }
+    uint8_t config = stm32_gpio_get_config_bits(s, pin);
+    if(config != STM32_GPIO_IN_ANALOG){
+        return 0;
+    }
+    return s->voltage[pin];
+}
 
 
 

@@ -11,6 +11,8 @@ typedef struct {
 
   PCBBus pcb_bus;
   qemu_irq out[STM32_GPIO_COUNT * STM32_GPIO_PIN_COUNT];
+  DeviceState* gpio[STM32_GPIO_COUNT];
+
 } PCBBridgeDevice;
 
 #define PCB_BRIDGE(obj) OBJECT_CHECK(PCBBridgeDevice, (obj), TYPE_PCB_BRIDGE)
@@ -98,6 +100,30 @@ static void stm32_pcb_gpio_connect(PCBBus* bus, uint16_t gpio, qemu_irq irq){
         dev->out[gpio] = irq;
     }
 }
+static void stm32_pcb_gpio_set_value(PCBBus* bus, uint16_t gpio, int value){
+    int port = STM32_PORT_INDEX(gpio);
+    if (port >= STM32_GPIO_COUNT)
+        return;
+    int pin = STM32_PIN_INDEX(gpio);
+    if (pin >= STM32_GPIO_PIN_COUNT)
+        return;
+
+    PCBBridgeDevice *dev = PCB_BRIDGE(BUS(bus)->parent);
+    DeviceState* gpio_dev = dev->gpio[port];
+    if (gpio_dev){
+        qemu_irq irq = qdev_get_gpio_in(gpio_dev, pin);
+        if (irq){
+            uint8_t config = stm32_gpio_get_config_bits(STM32_GPIO(gpio_dev), pin);
+            if(config == STM32_GPIO_IN_ANALOG){
+                qemu_set_irq(irq, value);
+            }else if (value >= V_IH_MV){
+                qemu_irq_raise(irq);
+            }else if (value <= V_IL_MV){
+                qemu_irq_lower(irq);
+            }
+        }
+    }
+}
 static void stm32_pcb_bridge_init(Object *obj)
 {
     int i;
@@ -107,25 +133,26 @@ static void stm32_pcb_bridge_init(Object *obj)
                         DEVICE(s), NULL);
 
     s->pcb_bus.gpio_connect = stm32_pcb_gpio_connect;
+    s->pcb_bus.gpio_set_value = stm32_pcb_gpio_set_value;
 
     qdev_init_gpio_out(DEVICE(s), s->out, STM32_GPIO_COUNT * STM32_GPIO_PIN_COUNT);
 
 
-    DeviceState *gpio_a = DEVICE(object_resolve_path("/machine/stm32/gpio[a]", NULL));
-    DeviceState *gpio_b = DEVICE(object_resolve_path("/machine/stm32/gpio[b]", NULL));
-    DeviceState *gpio_c = DEVICE(object_resolve_path("/machine/stm32/gpio[c]", NULL));
+    s->gpio[0] = DEVICE(object_resolve_path("/machine/stm32/gpio[a]", NULL));
+    s->gpio[1] = DEVICE(object_resolve_path("/machine/stm32/gpio[b]", NULL));
+    s->gpio[2] = DEVICE(object_resolve_path("/machine/stm32/gpio[c]", NULL));
 
     qemu_irq* irqs = qemu_allocate_irqs(stm32_pcb_bridge_irq_handler, (void *)s, STM32_GPIO_COUNT * STM32_GPIO_PIN_COUNT);
 
     for(i=0; i<STM32_GPIO_PIN_COUNT; i++){
-      if (gpio_a){ 
-          qdev_connect_gpio_out(gpio_a, i, irqs[i]);
+      if (s->gpio[0]){ 
+          qdev_connect_gpio_out(s->gpio[0], i, irqs[i]);
       }
-      if (gpio_b){
-          qdev_connect_gpio_out(gpio_b, i, irqs[STM32_GPIO_PIN_COUNT+i]);
+      if (s->gpio[1]){
+          qdev_connect_gpio_out(s->gpio[1], i, irqs[STM32_GPIO_PIN_COUNT+i]);
       }
-      if (gpio_c){
-          qdev_connect_gpio_out(gpio_c, i, irqs[2*STM32_GPIO_PIN_COUNT+i]);
+      if (s->gpio[2]){
+          qdev_connect_gpio_out(s->gpio[2], i, irqs[2*STM32_GPIO_PIN_COUNT+i]);
       }
     }
     for(i=0; i<STM32_GPIO_COUNT * STM32_GPIO_PIN_COUNT; i++){

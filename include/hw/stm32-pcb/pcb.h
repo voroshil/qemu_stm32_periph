@@ -37,6 +37,7 @@ struct PCBBus {
     int nirqs;
     stm32_periph_t  periph;
     void (*gpio_connect)(PCBBus* bus, uint16_t n, qemu_irq irq);
+    void (*gpio_set_value)(PCBBus* bus, uint16_t n, int value);
 };
 
 struct PCBDevice {

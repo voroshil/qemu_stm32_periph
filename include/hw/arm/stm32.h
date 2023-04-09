@@ -428,4 +428,10 @@ void stm32_init(
             uint32_t osc_freq,
             uint32_t osc32_freq);
 
+// Logic ONE threshold for 3.3 supply voltage (according to 6.3.14 of Reference Manual)
+#define V_IH_MV 1880
+// Logic ZERO threshold for 3.3 supply voltage (according to 6.3.14 of Reference Manual)
+#define V_IL_MV 1230
+#define V_VDDA_MV 3300
+
 #endif /* STM32_H */

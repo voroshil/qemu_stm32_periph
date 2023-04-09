@@ -76,9 +76,6 @@ struct Stm32Gpio {
 /* Trigger fired when a GPIO input pin changes state (based
  * on an external stimulus from the machine).
  */
-// Logic ONE threshold for 3.3 supply voltage (according to 6.3.14 of Reference Manual)
-#define V_IH_MV 1880
-#define V_VDDA_MV 3300
 static void stm32_gpio_in_trigger(void *opaque, int irq, int level)
 {
     Stm32Gpio *s = opaque;

@@ -330,3 +330,5 @@
 ##
 { 'event': 'VSERPORT_CHANGE',
   'data': { 'id': 'str', 'open': 'bool' } }
+
+{ 'include': '../hw/stm32-pcb/pcb.json'}

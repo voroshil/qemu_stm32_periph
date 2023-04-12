@@ -1,8 +1,9 @@
 #include "hw/stm32-pcb/pcb.h"
 #include "hw/sysbus.h"
 #include "hw/arm/stm32.h"
-#include <inttypes.h>
+#include "qapi-event.h"
 
+#include <inttypes.h>
 #define STM32_PC13 STM32_GPIO_INDEX(STM32_GPIOC_INDEX, 13)
 
 typedef struct  {
@@ -25,6 +26,7 @@ typedef struct  {
 static void stm32_led_irq_handler(void *opaque, int n, int level)
 {
     LedState *s = (LedState *)opaque;
+    PCBDevice *pd = PCB_DEVICE(s);
 
     uint8_t new_value = s->gpio_value;
 
@@ -42,8 +44,10 @@ static void stm32_led_irq_handler(void *opaque, int n, int level)
       active = !active;
     }
     if (changed && active){
+      qapi_event_send_x_pcb(pd->addr, "LED", 1, &error_abort);
       printf("LED[%s]: on\n", ((DeviceState*)s)->id);
     }else if (changed){
+      qapi_event_send_x_pcb(pd->addr, "LED", 0, &error_abort);
       printf("LED[%s]: off\n", ((DeviceState*)s)->id);
     }
 

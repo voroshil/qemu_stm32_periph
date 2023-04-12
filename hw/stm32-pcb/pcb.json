@@ -1,0 +1,10 @@
+##
+# @X-PCB
+#
+# Emitted when the PCB device changes state.
+#
+# Since: 0.12.0
+##
+{ 'event': 'X-PCB', 'data': { 'device': 'int', 'unit': 'str', 'state': 'int' } }
+
+

@@ -45,10 +45,10 @@ static void stm32_led_irq_handler(void *opaque, int n, int level)
     }
     if (changed && active){
       qapi_event_send_x_pcb(pd->addr, "LED", 1, &error_abort);
-      printf("LED[%s]: on\n", ((DeviceState*)s)->id);
+//      printf("LED[%s]: on\n", ((DeviceState*)s)->id);
     }else if (changed){
       qapi_event_send_x_pcb(pd->addr, "LED", 0, &error_abort);
-      printf("LED[%s]: off\n", ((DeviceState*)s)->id);
+//      printf("LED[%s]: off\n", ((DeviceState*)s)->id);
     }
 
     s->gpio_value = new_value;

@@ -2,6 +2,10 @@
 #include "hw/sysbus.h"
 #include "monitor/monitor.h"
 #include "hw/irq.h"
+#include "qmp-commands.h"
+#include "hw/qdev-core.h"
+#include "qapi-event.h"
+#include "qapi-event.h"
 
 #define TYPE_PCB_BRIDGE "stm32-pcb-bridge"
 
@@ -16,6 +20,34 @@ typedef struct {
 } PCBBridgeDevice;
 
 #define PCB_BRIDGE(obj) OBJECT_CHECK(PCBBridgeDevice, (obj), TYPE_PCB_BRIDGE)
+
+
+void qmp_x_pcb_set_state(int64_t device, const char *unit, int64_t state, Error **errp){
+//    DeviceState *bridge = DEVICE(object_resolve_path("/machine/stm32/stm32-pcb-bridge", NULL));
+}
+
+int64_t qmp_x_pcb_get_state(int64_t device, const char *unit, Error **errp){
+    bool ambig;
+    PCBBridgeDevice *bridge = PCB_BRIDGE(object_resolve_path_type("", TYPE_PCB_BRIDGE, &ambig));
+    if (!bridge){
+        error_setg(errp, "No PCB bridge detected");
+        return 0;
+    }
+    PCBBus* bus = &bridge->pcb_bus;
+    if (!bus->devices[device]){
+        error_setg(errp, "No device detected with addr=0x%02x", (uint8_t)device);
+        return 0;
+    }
+    PCBDevice* dev = PCB_DEVICE(bus->devices[device]);
+    if (!dev->get_state){
+        error_setg(errp, "Device does not support get_state command");
+        return 0;
+    }
+
+    int res = dev->get_state(dev, unit, errp);
+    qapi_event_send_x_pcb(device, unit, res, &error_abort);
+    return res;
+}
 
 static void pcb_bus_class_init(ObjectClass *klass, void *data)
 {

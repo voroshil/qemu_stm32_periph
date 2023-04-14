@@ -3755,3 +3755,8 @@ Example:
 <- { "return": {} }
 
 EQMP
+    {
+        .name       = "x-pcb-get-state",
+        .args_type  = "device:i,unit:s",
+        .mhandler.cmd_new = qmp_marshal_input_x_pcb_get_state,
+    },

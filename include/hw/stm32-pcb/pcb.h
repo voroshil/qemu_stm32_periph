@@ -48,6 +48,9 @@ struct PCBDevice {
     DeviceState parent_obj;
     /*< public >*/
 
+    void (*set_state)(PCBDevice* dev, const char *unit, int64_t state, Error **errp);
+    int (*get_state)(PCBDevice* dev, const char *unit, Error **errp);
+
     uint8_t addr;
 };
 

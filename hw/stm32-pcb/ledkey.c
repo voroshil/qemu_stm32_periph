@@ -84,6 +84,8 @@ static void print_led(LedkeyState *s){
 }
 
 static void lk_parse(LedkeyState *s){
+  PCBDevice *pd = PCB_DEVICE(s);
+
   uint8_t data = s->spi_byte;
 //  printf("SPI:0x%02x\n", data);
   if (s->state == STATE_CMD){
@@ -115,7 +117,24 @@ static void lk_parse(LedkeyState *s){
 //    printf("Data: @%x=0x%02x\n", s->addr, data);
     if (s->write_mode == MODE_WRITE){
       s->buffer[s->addr] = data;
-      print_led(s);
+      if (s->addr == 0){
+        qapi_event_send_x_pcb(pd->addr, "SEG0", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 2){
+        qapi_event_send_x_pcb(pd->addr, "SEG1", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 4){
+        qapi_event_send_x_pcb(pd->addr, "SEG2", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 6){
+        qapi_event_send_x_pcb(pd->addr, "SEG3", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 8){
+        qapi_event_send_x_pcb(pd->addr, "SEG4", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 10){
+        qapi_event_send_x_pcb(pd->addr, "SEG5", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 12){
+        qapi_event_send_x_pcb(pd->addr, "SEG6", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 14){
+        qapi_event_send_x_pcb(pd->addr, "SEG7", s->buffer[s->addr], &error_abort);
+      }
+//      print_led(s);
     }
     if (s->autoincrement == INCREMENT_ON){
       s->addr = (s->addr + 1) & 0xf;
@@ -185,6 +204,16 @@ static void stm32_ledkey_reset(DeviceState *dev)
     s->write_mode = MODE_WRITE;
     s->autoincrement = INCREMENT_OFF;
 }
+static int ledkey_get_state(PCBDevice* dev, const char* unit, Error **errp){
+  if (unit[0] != 'S' || unit[1]!='E' || unit[2]!='G' || unit[4] != 0 || unit[3]<'0' || unit[3]>'7'){
+    error_setg(errp, "Unsupported unit: %s", unit);
+    return 0;
+  }
+
+  LedkeyState *s = STM32_LEDKEY(dev);
+  int index = unit[3]-'0';
+  return s->buffer[index<<1];
+}
 static void stm32_ledkey_realize(DeviceState *dev, Error **errp)
 {
     LedkeyState *s = STM32_LEDKEY(dev);
@@ -193,6 +222,7 @@ static void stm32_ledkey_realize(DeviceState *dev, Error **errp)
     if (pc->parent_realize){
       pc->parent_realize(dev, errp);
     }
+    s->busdev.get_state = ledkey_get_state;
 
     if (STM32_PORT_INDEX(s->nss_gpio) >= STM32_GPIO_COUNT){
       error_setg(errp, "Unsupported GPIO port for NSS: 0x%02x", s->nss_gpio);

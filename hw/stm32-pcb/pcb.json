@@ -1,4 +1,28 @@
 ##
+# @x-pcb-set-state:
+#
+# Sets the state of PCB component.
+#
+# @device:  Device addr in PCB
+#
+# @unit:    Device component's name
+#
+# @state:   Component's state (value depends of component)
+#
+# Since: 0.14.0
+##
+{ 'command': 'x-pcb-set-state', 'data': {'device': 'int', 'unit':'str', 'state':'int'} }
+##
+# @x-pcb-get-state:
+#
+# Returns the state of PCB component.
+#
+# Returns:  A @XPCBStateInfo object describing the state of component.
+#
+# Since: 0.14.0
+##
+{ 'command': 'x-pcb-get-state', 'data': {'device': 'int', 'unit':'str'}, 'returns': 'int'}
+##
 # @X-PCB
 #
 # Emitted when the PCB device changes state.
@@ -6,5 +30,3 @@
 # Since: 0.12.0
 ##
 { 'event': 'X-PCB', 'data': { 'device': 'int', 'unit': 'str', 'state': 'int' } }
-
-

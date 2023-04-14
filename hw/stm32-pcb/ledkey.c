@@ -1,6 +1,7 @@
 #include "hw/stm32-pcb/pcb.h"
 #include "hw/sysbus.h"
 #include "hw/arm/stm32.h"
+#include "qapi-event.h"
 #include <inttypes.h>
 
 #define STATE_CMD 0
@@ -114,25 +115,41 @@ static void lk_parse(LedkeyState *s){
         break;
     }
   }else if (s->state == STATE_DATA){
-//    printf("Data: @%x=0x%02x\n", s->addr, data);
+    printf("Data: @%x=0x%02x\n", s->addr, data);
     if (s->write_mode == MODE_WRITE){
       s->buffer[s->addr] = data;
       if (s->addr == 0){
         qapi_event_send_x_pcb(pd->addr, "SEG0", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 1){
+        qapi_event_send_x_pcb(pd->addr, "LED0", s->buffer[s->addr] & 1, &error_abort);
       }else if (s->addr == 2){
         qapi_event_send_x_pcb(pd->addr, "SEG1", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 3){
+        qapi_event_send_x_pcb(pd->addr, "LED1", s->buffer[s->addr] & 1, &error_abort);
       }else if (s->addr == 4){
         qapi_event_send_x_pcb(pd->addr, "SEG2", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 5){
+        qapi_event_send_x_pcb(pd->addr, "LED2", s->buffer[s->addr] & 1, &error_abort);
       }else if (s->addr == 6){
         qapi_event_send_x_pcb(pd->addr, "SEG3", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 7){
+        qapi_event_send_x_pcb(pd->addr, "LED3", s->buffer[s->addr] & 1, &error_abort);
       }else if (s->addr == 8){
         qapi_event_send_x_pcb(pd->addr, "SEG4", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 9){
+        qapi_event_send_x_pcb(pd->addr, "LED4", s->buffer[s->addr] & 1, &error_abort);
       }else if (s->addr == 10){
         qapi_event_send_x_pcb(pd->addr, "SEG5", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 11){
+        qapi_event_send_x_pcb(pd->addr, "LED5", s->buffer[s->addr] & 1, &error_abort);
       }else if (s->addr == 12){
         qapi_event_send_x_pcb(pd->addr, "SEG6", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 13){
+        qapi_event_send_x_pcb(pd->addr, "LED6", s->buffer[s->addr] & 1, &error_abort);
       }else if (s->addr == 14){
         qapi_event_send_x_pcb(pd->addr, "SEG7", s->buffer[s->addr], &error_abort);
+      }else if (s->addr == 15){
+        qapi_event_send_x_pcb(pd->addr, "LED7", s->buffer[s->addr] & 1, &error_abort);
       }
 //      print_led(s);
     }
@@ -205,14 +222,19 @@ static void stm32_ledkey_reset(DeviceState *dev)
     s->autoincrement = INCREMENT_OFF;
 }
 static int ledkey_get_state(PCBDevice* dev, const char* unit, Error **errp){
-  if (unit[0] != 'S' || unit[1]!='E' || unit[2]!='G' || unit[4] != 0 || unit[3]<'0' || unit[3]>'7'){
-    error_setg(errp, "Unsupported unit: %s", unit);
-    return 0;
-  }
-
   LedkeyState *s = STM32_LEDKEY(dev);
-  int index = unit[3]-'0';
-  return s->buffer[index<<1];
+
+  if (!strncmp("SEG", unit, 3) && unit[3]>='0' && unit[3]<='7' && unit[4] == 0){
+    int index = unit[3]-'0';
+    return s->buffer[index<<1];
+  }
+  if (!strncmp("LED", unit, 3) && unit[3]>='0' && unit[3]<='7' && unit[4] == 0){
+    int index = unit[3]-'0';
+    return s->buffer[(index<<1)+1] & 1;
+  }
+  error_setg(errp, "Unsupported unit: %s", unit);
+  return 0;
+
 }
 static void stm32_ledkey_realize(DeviceState *dev, Error **errp)
 {

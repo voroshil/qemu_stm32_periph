@@ -3756,7 +3756,7 @@ Example:
 
 EQMP
     {
-        .name       = "x-pcb-get-state",
+        .name       = "x-pcb-report-state",
         .args_type  = "device:i,unit:s",
-        .mhandler.cmd_new = qmp_marshal_input_x_pcb_get_state,
+        .mhandler.cmd_new = qmp_marshal_input_x_pcb_report_state,
     },

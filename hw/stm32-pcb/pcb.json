@@ -21,7 +21,7 @@
 #
 # Since: 0.14.0
 ##
-{ 'command': 'x-pcb-get-state', 'data': {'device': 'int', 'unit':'str'}, 'returns': 'int'}
+{ 'command': 'x-pcb-report-state', 'data': {'device': 'int', 'unit':'str'}}
 ##
 # @X-PCB
 #

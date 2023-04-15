@@ -87,7 +87,7 @@ static void lk_parse(LedkeyState *s){
   PCBDevice *pd = PCB_DEVICE(s);
 
   uint8_t data = s->spi_byte;
-//  printf("SPI:0x%02x state: %d\n", data, s->state);
+  //  printf("SPI:0x%02x state: %d\n", data, s->state);
   if (s->state == STATE_CMD){
     switch(data & 0xc0){
       case 0:
@@ -111,7 +111,7 @@ static void lk_parse(LedkeyState *s){
         }
         break;
       case 0x80:
-        printf ("Display control: %s intensity=%d\n",((data & 8) ? "ON" : "OFF"), data & 7);
+//        printf ("Display control: %s intensity=%d\n",((data & 8) ? "ON" : "OFF"), data & 7);
         break;
       case 0xc0:
         s->addr = data & 0xf;
@@ -120,46 +120,50 @@ static void lk_parse(LedkeyState *s){
         break;
     }
   }else if (s->state == STATE_READ){
-//    printf ("State read: 0x%02x\n", s->addr);
+    //    printf ("State read: 0x%02x\n", s->addr);
     s->addr = (s->addr + 1) & 0x3;
     s->spi_byte = (s->buttons >> (s->addr << 3)) & 0xff;
     s->spi_cnt = 0;
   }else if (s->state == STATE_DATA){
-//    printf("Data: @%x=0x%02x\n", s->addr, data);
+//    printf("Data: @%x  0x%02x => 0x%02x\n", s->addr, s->buffer[s->addr], data);
     if (s->write_mode == MODE_WRITE){
-      s->buffer[s->addr] = data;
-      if (s->addr == 0){
-        qapi_event_send_x_pcb(pd->addr, "SEG0", s->buffer[s->addr], &error_abort);
-      }else if (s->addr == 1){
-        qapi_event_send_x_pcb(pd->addr, "LED0", s->buffer[s->addr] & 1, &error_abort);
-      }else if (s->addr == 2){
-        qapi_event_send_x_pcb(pd->addr, "SEG1", s->buffer[s->addr], &error_abort);
-      }else if (s->addr == 3){
-        qapi_event_send_x_pcb(pd->addr, "LED1", s->buffer[s->addr] & 1, &error_abort);
-      }else if (s->addr == 4){
-        qapi_event_send_x_pcb(pd->addr, "SEG2", s->buffer[s->addr], &error_abort);
-      }else if (s->addr == 5){
-        qapi_event_send_x_pcb(pd->addr, "LED2", s->buffer[s->addr] & 1, &error_abort);
-      }else if (s->addr == 6){
-        qapi_event_send_x_pcb(pd->addr, "SEG3", s->buffer[s->addr], &error_abort);
-      }else if (s->addr == 7){
-        qapi_event_send_x_pcb(pd->addr, "LED3", s->buffer[s->addr] & 1, &error_abort);
-      }else if (s->addr == 8){
-        qapi_event_send_x_pcb(pd->addr, "SEG4", s->buffer[s->addr], &error_abort);
-      }else if (s->addr == 9){
-        qapi_event_send_x_pcb(pd->addr, "LED4", s->buffer[s->addr] & 1, &error_abort);
-      }else if (s->addr == 10){
-        qapi_event_send_x_pcb(pd->addr, "SEG5", s->buffer[s->addr], &error_abort);
-      }else if (s->addr == 11){
-        qapi_event_send_x_pcb(pd->addr, "LED5", s->buffer[s->addr] & 1, &error_abort);
-      }else if (s->addr == 12){
-        qapi_event_send_x_pcb(pd->addr, "SEG6", s->buffer[s->addr], &error_abort);
-      }else if (s->addr == 13){
-        qapi_event_send_x_pcb(pd->addr, "LED6", s->buffer[s->addr] & 1, &error_abort);
-      }else if (s->addr == 14){
-        qapi_event_send_x_pcb(pd->addr, "SEG7", s->buffer[s->addr], &error_abort);
-      }else if (s->addr == 15){
-        qapi_event_send_x_pcb(pd->addr, "LED7", s->buffer[s->addr] & 1, &error_abort);
+      if (s->buffer[s->addr] != data){
+        s->buffer[s->addr] = data;
+//        printf("X:Data: @%x  0x%02x => 0x%02x\n", s->addr, s->buffer[s->addr], data);
+        s->buffer[s->addr] = data;
+        if (s->addr == 0){
+          qapi_event_send_x_pcb(pd->addr, "SEG0", s->buffer[s->addr], &error_abort);
+        }else if (s->addr == 1){
+          qapi_event_send_x_pcb(pd->addr, "LED0", s->buffer[s->addr] & 1, &error_abort);
+        }else if (s->addr == 2){
+          qapi_event_send_x_pcb(pd->addr, "SEG1", s->buffer[s->addr], &error_abort);
+        }else if (s->addr == 3){
+          qapi_event_send_x_pcb(pd->addr, "LED1", s->buffer[s->addr] & 1, &error_abort);
+        }else if (s->addr == 4){
+          qapi_event_send_x_pcb(pd->addr, "SEG2", s->buffer[s->addr], &error_abort);
+        }else if (s->addr == 5){
+          qapi_event_send_x_pcb(pd->addr, "LED2", s->buffer[s->addr] & 1, &error_abort);
+        }else if (s->addr == 6){
+          qapi_event_send_x_pcb(pd->addr, "SEG3", s->buffer[s->addr], &error_abort);
+        }else if (s->addr == 7){
+          qapi_event_send_x_pcb(pd->addr, "LED3", s->buffer[s->addr] & 1, &error_abort);
+        }else if (s->addr == 8){
+          qapi_event_send_x_pcb(pd->addr, "SEG4", s->buffer[s->addr], &error_abort);
+        }else if (s->addr == 9){
+          qapi_event_send_x_pcb(pd->addr, "LED4", s->buffer[s->addr] & 1, &error_abort);
+        }else if (s->addr == 10){
+          qapi_event_send_x_pcb(pd->addr, "SEG5", s->buffer[s->addr], &error_abort);
+        }else if (s->addr == 11){
+          qapi_event_send_x_pcb(pd->addr, "LED5", s->buffer[s->addr] & 1, &error_abort);
+        }else if (s->addr == 12){
+          qapi_event_send_x_pcb(pd->addr, "SEG6", s->buffer[s->addr], &error_abort);
+        }else if (s->addr == 13){
+          qapi_event_send_x_pcb(pd->addr, "LED6", s->buffer[s->addr] & 1, &error_abort);
+        }else if (s->addr == 14){
+          qapi_event_send_x_pcb(pd->addr, "SEG7", s->buffer[s->addr], &error_abort);
+        }else if (s->addr == 15){
+          qapi_event_send_x_pcb(pd->addr, "LED7", s->buffer[s->addr] & 1, &error_abort);
+        }
       }
 //      print_led(s);
     }
@@ -183,7 +187,7 @@ static void stm32_ledkey_irq_handler(void *opaque, int n, int level)
     }else{
       new_value &= ~(1<<n);
     }
-//    printf("SPI(irq): <= %02x state: %d\n", new_value,s->state);
+//    printf("SPI(irq): <= %c%c%c state: %d\n", new_value & MASK_STB?'S':'.',new_value&MASK_CLK?'C':'.',new_value&MASK_DIO?'D':'.',s->state);
     uint8_t changed = s->gpio_value ^ new_value;
     if (!(new_value & MASK_STB)){
       if ((changed & MASK_CLK) && (new_value & MASK_CLK)){

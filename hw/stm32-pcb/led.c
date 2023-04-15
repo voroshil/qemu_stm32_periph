@@ -54,6 +54,18 @@ static void stm32_led_irq_handler(void *opaque, int n, int level)
     s->gpio_value = new_value;
 }
 
+static int led_get_state(PCBDevice* dev, const char* unit, Error **errp){
+  LedState *s = STM32_LED(dev);
+
+  if (strncmp("LED", unit, 3) || unit[3] != 0){
+    error_setg(errp, "Unsupported unit: %s", unit);
+    return 0;
+  }
+  if (s->active_low)
+    return s->gpio_value ? 0 : 1;
+  else
+    return s->gpio_value ? 1 : 0;
+}
 static void stm32_led_reset(DeviceState *dev)
 {
     LedState *s = STM32_LED(dev);
@@ -70,6 +82,9 @@ static void stm32_led_realize(DeviceState *dev, Error **errp)
     if (pc->parent_realize){
       pc->parent_realize(dev, errp);
     }
+
+    s->busdev.get_state = led_get_state;
+
     if (STM32_PORT_INDEX(s->data_gpio) >= STM32_GPIO_COUNT){
       error_setg(errp, "Unsupported GPIO port for DATA: 0x%02x", s->data_gpio);
       return;

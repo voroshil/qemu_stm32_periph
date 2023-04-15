@@ -15,19 +15,16 @@
 #define INCREMENT_ON 0
 #define INCREMENT_OFF 1
 
-#define BIT_NSS  0
-#define BIT_SCK  1
-#define BIT_MISO 2
-#define BIT_MOSI 3
+#define BIT_STB  0
+#define BIT_CLK  1
+#define BIT_DIO 2
 
-#define MASK_NSS (1<<BIT_NSS)
-#define MASK_SCK (1<<BIT_SCK)
-#define MASK_MISO (1<<BIT_MISO)
-#define MASK_MOSI (1<<BIT_MOSI)
+#define MASK_STB (1<<BIT_STB)
+#define MASK_CLK (1<<BIT_CLK)
+#define MASK_DIO (1<<BIT_DIO)
 
 #define STM32_PB12 STM32_GPIO_INDEX(STM32_GPIOB_INDEX, 12)
 #define STM32_PB13 STM32_GPIO_INDEX(STM32_GPIOB_INDEX, 13)
-#define STM32_PB14 STM32_GPIO_INDEX(STM32_GPIOB_INDEX, 14)
 #define STM32_PB15 STM32_GPIO_INDEX(STM32_GPIOB_INDEX, 15)
 
 typedef struct  {
@@ -35,10 +32,9 @@ typedef struct  {
     PCBDevice busdev;
 
     /* Properties */
-    uint16_t nss_gpio;
-    uint16_t sck_gpio;
-    uint16_t miso_gpio;
-    uint16_t mosi_gpio;
+    uint16_t stb_gpio;
+    uint16_t clk_gpio;
+    uint16_t dio_gpio;
 
     /* Private */
 
@@ -124,12 +120,12 @@ static void lk_parse(LedkeyState *s){
         break;
     }
   }else if (s->state == STATE_READ){
-    printf ("State read: 0x%02x\n", s->addr);
+//    printf ("State read: 0x%02x\n", s->addr);
     s->addr = (s->addr + 1) & 0x3;
     s->spi_byte = (s->buttons >> (s->addr << 3)) & 0xff;
     s->spi_cnt = 0;
   }else if (s->state == STATE_DATA){
-    printf("Data: @%x=0x%02x\n", s->addr, data);
+//    printf("Data: @%x=0x%02x\n", s->addr, data);
     if (s->write_mode == MODE_WRITE){
       s->buffer[s->addr] = data;
       if (s->addr == 0){
@@ -181,7 +177,7 @@ static void stm32_ledkey_irq_handler(void *opaque, int n, int level)
 
     uint8_t new_value = s->gpio_value;
 
-    assert(n >= BIT_NSS && n <= BIT_MOSI);
+    assert(n >= BIT_STB && n <= BIT_DIO);
     if(level){
       new_value |= (1<<n);
     }else{
@@ -189,19 +185,19 @@ static void stm32_ledkey_irq_handler(void *opaque, int n, int level)
     }
 //    printf("SPI(irq): <= %02x state: %d\n", new_value,s->state);
     uint8_t changed = s->gpio_value ^ new_value;
-    if (!(new_value & MASK_NSS)){
-      if ((changed & MASK_SCK) && (new_value & MASK_SCK)){
+    if (!(new_value & MASK_STB)){
+      if ((changed & MASK_CLK) && (new_value & MASK_CLK)){
         if (s->write_mode == MODE_WRITE){
           s->spi_byte >>= 1;
-          if(new_value & MASK_MOSI){
+          if(new_value & MASK_DIO){
             s->spi_byte |= 0x80;
           }
           s->spi_cnt++;
         }
-      }else if ((changed & MASK_SCK) && !(new_value & MASK_SCK)){
+      }else if ((changed & MASK_CLK) && !(new_value & MASK_CLK)){
         if (s->write_mode == MODE_READ){
          int v = (s->buttons >> ((s->addr<<3)+s->spi_cnt)) & 1 ? 3300 : 0;
-         bus->gpio_set_value(bus, s->mosi_gpio, v);
+         bus->gpio_set_value(bus, s->dio_gpio, v);
 //    printf("SPI(irq): (%x,%d,%d) => %02x state: %d\n", s->buttons, s->addr, s->spi_cnt, v,s->state);
          s->spi_byte >>= 1;
          s->spi_cnt++;
@@ -302,55 +298,45 @@ static void stm32_ledkey_realize(DeviceState *dev, Error **errp)
     s->busdev.get_state = ledkey_get_state;
     s->busdev.set_state = ledkey_set_state;
 
-    if (STM32_PORT_INDEX(s->nss_gpio) >= STM32_GPIO_COUNT){
-      error_setg(errp, "Unsupported GPIO port for NSS: 0x%02x", s->nss_gpio);
+    if (STM32_PORT_INDEX(s->stb_gpio) >= STM32_GPIO_COUNT){
+      error_setg(errp, "Unsupported GPIO port for STB: 0x%02x", s->stb_gpio);
       return;
     }
-    if (STM32_PORT_INDEX(s->sck_gpio) >= STM32_GPIO_COUNT){
-      error_setg(errp, "Unsupported GPIO port for SCK: 0x%02x", s->sck_gpio);
+    if (STM32_PORT_INDEX(s->clk_gpio) >= STM32_GPIO_COUNT){
+      error_setg(errp, "Unsupported GPIO port for CLK: 0x%02x", s->clk_gpio);
       return;
     }
-    if (STM32_PORT_INDEX(s->miso_gpio) >= STM32_GPIO_COUNT){
-      error_setg(errp, "Unsupported GPIO port for MISO: 0x%02x", s->miso_gpio);
+    if (STM32_PORT_INDEX(s->dio_gpio) >= STM32_GPIO_COUNT){
+      error_setg(errp, "Unsupported GPIO port for CLK: 0x%02x", s->dio_gpio);
       return;
     }
-    if (STM32_PORT_INDEX(s->mosi_gpio) >= STM32_GPIO_COUNT){
-      error_setg(errp, "Unsupported GPIO port for SCK: 0x%02x", s->mosi_gpio);
+    if (STM32_PIN_INDEX(s->stb_gpio) >= STM32_GPIO_PIN_COUNT){
+      error_setg(errp, "Unsupported GPIO pin for STB: 0x%02x", s->stb_gpio);
       return;
     }
-    if (STM32_PIN_INDEX(s->nss_gpio) >= STM32_GPIO_PIN_COUNT){
-      error_setg(errp, "Unsupported GPIO pin for NSS: 0x%02x", s->nss_gpio);
+    if (STM32_PIN_INDEX(s->clk_gpio) >= STM32_GPIO_PIN_COUNT){
+      error_setg(errp, "Unsupported GPIO pin for CLK: 0x%02x", s->stb_gpio);
       return;
     }
-    if (STM32_PIN_INDEX(s->sck_gpio) >= STM32_GPIO_PIN_COUNT){
-      error_setg(errp, "Unsupported GPIO pin for SCK: 0x%02x", s->nss_gpio);
-      return;
-    }
-    if (STM32_PIN_INDEX(s->miso_gpio) >= STM32_GPIO_PIN_COUNT){
-      error_setg(errp, "Unsupported GPIO pin for MISO: 0x%02x", s->miso_gpio);
-      return;
-    }
-    if (STM32_PIN_INDEX(s->mosi_gpio) >= STM32_GPIO_PIN_COUNT){
-      error_setg(errp, "Unsupported GPIO pin for MOSI: 0x%02x", s->mosi_gpio);
+    if (STM32_PIN_INDEX(s->dio_gpio) >= STM32_GPIO_PIN_COUNT){
+      error_setg(errp, "Unsupported GPIO pin for DIO: 0x%02x", s->dio_gpio);
       return;
     }
 
-    qemu_irq *gpio_irq = qemu_allocate_irqs(stm32_ledkey_irq_handler, (void *)s, 4);
+    qemu_irq *gpio_irq = qemu_allocate_irqs(stm32_ledkey_irq_handler, (void *)s, 3);
 
-    bus->gpio_connect(bus, s->nss_gpio, gpio_irq[BIT_NSS]);
-    bus->gpio_connect(bus, s->sck_gpio, gpio_irq[BIT_SCK]);
-    bus->gpio_connect(bus, s->miso_gpio, gpio_irq[BIT_MISO]);
-    bus->gpio_connect(bus, s->mosi_gpio, gpio_irq[BIT_MOSI]);
+    bus->gpio_connect(bus, s->stb_gpio, gpio_irq[BIT_STB]);
+    bus->gpio_connect(bus, s->clk_gpio, gpio_irq[BIT_CLK]);
+    bus->gpio_connect(bus, s->dio_gpio, gpio_irq[BIT_DIO]);
 
     stm32_ledkey_reset((DeviceState *)s);
 }
 
 
 static Property stm32_ledkey_properties[] = {
-    DEFINE_PROP_UINT16("nss-in", LedkeyState, nss_gpio, STM32_PB12),
-    DEFINE_PROP_UINT16("sck-in", LedkeyState, sck_gpio, STM32_PB13),
-    DEFINE_PROP_UINT16("miso-in", LedkeyState, miso_gpio, STM32_PB14),
-    DEFINE_PROP_UINT16("mosi-out", LedkeyState, mosi_gpio, STM32_PB15),
+    DEFINE_PROP_UINT16("stb", LedkeyState, stb_gpio, STM32_PB12),
+    DEFINE_PROP_UINT16("clk", LedkeyState, clk_gpio, STM32_PB13),
+    DEFINE_PROP_UINT16("dio", LedkeyState, dio_gpio, STM32_PB15),
     DEFINE_PROP_END_OF_LIST()
 };
 

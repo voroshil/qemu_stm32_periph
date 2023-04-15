@@ -23,7 +23,23 @@ typedef struct {
 
 
 void qmp_x_pcb_set_state(int64_t device, const char *unit, int64_t state, Error **errp){
-//    DeviceState *bridge = DEVICE(object_resolve_path("/machine/stm32/stm32-pcb-bridge", NULL));
+    bool ambig;
+    PCBBridgeDevice *bridge = PCB_BRIDGE(object_resolve_path_type("", TYPE_PCB_BRIDGE, &ambig));
+    if (!bridge){
+        error_setg(errp, "No PCB bridge detected");
+        return;
+    }
+    PCBBus* bus = &bridge->pcb_bus;
+    if (!bus->devices[device]){
+        error_setg(errp, "No device detected with addr=0x%02x", (uint8_t)device);
+        return;
+    }
+    PCBDevice* dev = PCB_DEVICE(bus->devices[device]);
+    if (!dev->set_state){
+        error_setg(errp, "Device does not support set_state command");
+        return;
+    }
+    dev->set_state(dev, unit, state, errp);
 }
 
 void qmp_x_pcb_report_state(int64_t device, const char *unit, Error **errp){

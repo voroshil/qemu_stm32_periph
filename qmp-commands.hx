@@ -3760,3 +3760,8 @@ EQMP
         .args_type  = "device:i,unit:s",
         .mhandler.cmd_new = qmp_marshal_input_x_pcb_report_state,
     },
+    {
+        .name       = "x-pcb-set-state",
+        .args_type  = "device:i,unit:s,state:i",
+        .mhandler.cmd_new = qmp_marshal_input_x_pcb_set_state,
+    },

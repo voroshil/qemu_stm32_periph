@@ -7,6 +7,7 @@
 #define STATE_CMD 0
 #define STATE_ADDR 1
 #define STATE_DATA 2
+#define STATE_READ 3
 
 #define MODE_WRITE 0
 #define MODE_READ  1
@@ -45,6 +46,7 @@ typedef struct  {
     uint8_t spi_byte;
     uint8_t spi_cnt;
     uint8_t buffer[16];
+    uint32_t buttons;
 
     uint8_t state;
     uint8_t addr;
@@ -58,6 +60,7 @@ typedef struct  {
 
 
 
+#if 0
 static void print_led(LedkeyState *s){
   int i;
   printf("\e[1;1H\e[2J");
@@ -83,12 +86,12 @@ static void print_led(LedkeyState *s){
   for(i=0; i<16; i+=2) printf("      ");
   printf("\n");
 }
-
+#endif
 static void lk_parse(LedkeyState *s){
   PCBDevice *pd = PCB_DEVICE(s);
 
   uint8_t data = s->spi_byte;
-//  printf("SPI:0x%02x\n", data);
+//  printf("SPI:0x%02x state: %d\n", data, s->state);
   if (s->state == STATE_CMD){
     switch(data & 0xc0){
       case 0:
@@ -104,6 +107,12 @@ static void lk_parse(LedkeyState *s){
         s->write_mode = (data & 2) ? MODE_READ : MODE_WRITE;
         s->autoincrement = (data & 4) ? INCREMENT_OFF : INCREMENT_ON;
 //        printf("Data settings: mode=%s, autoincrement=%s, mode=%s\n", ((data&8)?"test":"normal"), (s->autoincrement == INCREMENT_OFF ? "off":"on"), (s->write_mode == MODE_READ?"read":"write"));
+        if (s->write_mode == MODE_READ){
+          s->addr = 0;
+          s->spi_byte = s->buttons & 0xff;
+          s->spi_cnt = 0;
+          s->state = STATE_READ;
+        }
         break;
       case 0x80:
         printf ("Display control: %s intensity=%d\n",((data & 8) ? "ON" : "OFF"), data & 7);
@@ -114,6 +123,11 @@ static void lk_parse(LedkeyState *s){
         s->state = STATE_DATA;
         break;
     }
+  }else if (s->state == STATE_READ){
+    printf ("State read: 0x%02x\n", s->addr);
+    s->addr = (s->addr + 1) & 0x3;
+    s->spi_byte = (s->buttons >> (s->addr << 3)) & 0xff;
+    s->spi_cnt = 0;
   }else if (s->state == STATE_DATA){
     printf("Data: @%x=0x%02x\n", s->addr, data);
     if (s->write_mode == MODE_WRITE){
@@ -162,6 +176,8 @@ static void stm32_ledkey_irq_handler(void *opaque, int n, int level)
 {
 
     LedkeyState *s = (LedkeyState *)opaque;
+    DeviceState* dev = DEVICE(opaque);
+    PCBBus* bus = PCB_BUS(dev->parent_bus);
 
     uint8_t new_value = s->gpio_value;
 
@@ -171,27 +187,25 @@ static void stm32_ledkey_irq_handler(void *opaque, int n, int level)
     }else{
       new_value &= ~(1<<n);
     }
-
+//    printf("SPI(irq): <= %02x state: %d\n", new_value,s->state);
     uint8_t changed = s->gpio_value ^ new_value;
     if (!(new_value & MASK_NSS)){
-/*
-printf("%c%c%c%c vs %c%c%c%c\n", 
-    s->gpio_value & MASK_NSS?'N':'n',
-    s->gpio_value & MASK_SCK?'C':'c',
-    s->gpio_value & MASK_MISO?'I':'i',
-    s->gpio_value & MASK_MOSI?'O':'o',
-    new_value & MASK_NSS?'N':'n',
-    new_value & MASK_SCK?'C':'c',
-    new_value & MASK_MISO?'I':'i',
-    new_value & MASK_MOSI?'O':'o'
-);
-*/
       if ((changed & MASK_SCK) && (new_value & MASK_SCK)){
-        s->spi_byte >>= 1;
-        if(new_value & MASK_MOSI){
-          s->spi_byte |= 0x80;
+        if (s->write_mode == MODE_WRITE){
+          s->spi_byte >>= 1;
+          if(new_value & MASK_MOSI){
+            s->spi_byte |= 0x80;
+          }
+          s->spi_cnt++;
         }
-        s->spi_cnt++;
+      }else if ((changed & MASK_SCK) && !(new_value & MASK_SCK)){
+        if (s->write_mode == MODE_READ){
+         int v = (s->buttons >> ((s->addr<<3)+s->spi_cnt)) & 1 ? 3300 : 0;
+         bus->gpio_set_value(bus, s->mosi_gpio, v);
+//    printf("SPI(irq): (%x,%d,%d) => %02x state: %d\n", s->buttons, s->addr, s->spi_cnt, v,s->state);
+         s->spi_byte >>= 1;
+         s->spi_cnt++;
+        }
       }
 
       if (s->spi_cnt == 8){
@@ -200,6 +214,17 @@ printf("%c%c%c%c vs %c%c%c%c\n",
         s->spi_cnt = 0;
       }
 
+    }else if (s->state == STATE_CMD && s->write_mode == MODE_READ){
+        s->state = STATE_READ;
+        s->addr = 0;
+        s->spi_cnt = 0;
+        s->spi_byte = s->buttons & 0xff;
+    }else if (s->state == STATE_READ && s->write_mode == MODE_READ){
+        s->state = STATE_CMD;
+        s->write_mode = MODE_WRITE;
+        s->spi_cnt = 0;
+        s->addr = 0;
+        s->spi_byte = 0;
     }else{
       s->spi_byte = 0;
       s->spi_cnt = 0;
@@ -215,7 +240,7 @@ static void stm32_ledkey_reset(DeviceState *dev)
     s->gpio_value = 0;
     s->spi_byte = 0;
     s->spi_cnt = 0;
-
+    s->buttons = 0;
     s->state = STATE_CMD;
     s->addr = 0;
     s->write_mode = MODE_WRITE;
@@ -236,6 +261,36 @@ static int ledkey_get_state(PCBDevice* dev, const char* unit, Error **errp){
   return 0;
 
 }
+static void ledkey_set_state(PCBDevice* dev, const char* unit, int64_t state, Error **errp){
+  LedkeyState *s = STM32_LEDKEY(dev);
+  uint32_t mask = 0;
+  if (!strncmp("BTN0", unit, 4) && unit[4] == 0){
+    mask = 0x00000001;
+  }else if (!strncmp("BTN1", unit, 4) && unit[4] == 0){
+    mask = 0x00000100;
+  }else if (!strncmp("BTN2", unit, 4) && unit[4] == 0){
+    mask = 0x00010000;
+  }else if (!strncmp("BTN3", unit, 4) && unit[4] == 0){
+    mask = 0x01000000;
+  }else if (!strncmp("BTN4", unit, 4) && unit[4] == 0){
+    mask = 0x00000010;
+  }else if (!strncmp("BTN5", unit, 4) && unit[4] == 0){
+    mask = 0x00001000;
+  }else if (!strncmp("BTN6", unit, 4) && unit[4] == 0){
+    mask = 0x00100000;
+  }else if (!strncmp("BTN7", unit, 4) && unit[4] == 0){
+    mask = 0x10000000;
+  }else{
+    error_setg(errp, "Unsupported unit: %s", unit);
+    return;
+  }
+
+  if (state){
+    s->buttons |= mask;
+  }else{
+    s->buttons &= ~mask;
+  }
+}
 static void stm32_ledkey_realize(DeviceState *dev, Error **errp)
 {
     LedkeyState *s = STM32_LEDKEY(dev);
@@ -245,6 +300,7 @@ static void stm32_ledkey_realize(DeviceState *dev, Error **errp)
       pc->parent_realize(dev, errp);
     }
     s->busdev.get_state = ledkey_get_state;
+    s->busdev.set_state = ledkey_set_state;
 
     if (STM32_PORT_INDEX(s->nss_gpio) >= STM32_GPIO_COUNT){
       error_setg(errp, "Unsupported GPIO port for NSS: 0x%02x", s->nss_gpio);

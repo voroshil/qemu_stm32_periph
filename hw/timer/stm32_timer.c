@@ -29,7 +29,7 @@
 /* DEFINITIONS*/
 
 /* See the README file for details on these settings. */
-//#define DEBUG_STM32_TIMER
+#define DEBUG_STM32_TIMER
 
 #ifdef DEBUG_STM32_TIMER
 #define DPRINTF(fmt, ...)                                       \
@@ -59,8 +59,18 @@
 #define TIMER_DCR_OFFSET   0x48
 #define TIMER_DMAR_OFFSET  0x4C
 
-#define TIMER_CEN          0x1
+#define TIMER_CR1_OPM      0x8
+#define TIMER_CR1_CEN      0x1
+#define TIMER_CR1_DIR_DOWN 0x10
+#define TIMER_CR1_CMS_MASK 0x60
 
+#define TIMER_CCER_CC4E   (1<<12)
+#define TIMER_CCER_CC3E   (1<<8)
+#define TIMER_CCER_CC2E   (1<<4)
+#define TIMER_CCER_CC1E   (1<<0)
+
+
+#define GPIO_BSRR_OFFSET 0x10
 enum
 {
     TIMER_UP_COUNT     = 0,
@@ -74,6 +84,8 @@ struct Stm32Timer {
 
     MemoryRegion  iomem;
     ptimer_state *timer;
+    ptimer_state *timer_oc;
+    uint8_t ocref;
     qemu_irq      irq;
 
     /* Properties */
@@ -128,6 +140,7 @@ static void stm32_timer_freq(Stm32Timer *s)
     );
     if(clk_freq != 0) {
         ptimer_set_freq(s->timer, clk_freq);
+        ptimer_set_freq(s->timer_oc, clk_freq);
     }
 }
 
@@ -144,6 +157,71 @@ static uint32_t stm32_timer_get_count(Stm32Timer *s)
     }
 }
 
+static void stm32_timer_update_ocref(Stm32Timer *s, uint8_t idx, Stm32Gpio *gpio, uint8_t pin, uint32_t ccr, uint8_t mode, uint8_t polarity){
+  uint32_t elapsed = stm32_timer_get_count(s);
+  uint32_t oc = ccr & 0xffff;
+
+  uint8_t old_ocref = s->ocref;
+
+  switch(mode){
+    case 0:
+      break;
+    case 1:
+      if (elapsed >= oc) s->ocref |= (1<<idx);
+      break;
+    case 2:
+      if (elapsed >= oc) s->ocref &= ~(1<<idx);
+      break;
+    case 3:
+      if (elapsed >= oc) s->ocref ^= (1<<idx);
+      break;
+    case 4:
+      s->ocref &= ~(1<<idx);
+      break;
+    case 5:
+      s->ocref |= (1<<idx);
+      break;
+    case 6:
+      if (elapsed <= oc){
+          s->ocref |= (1<<idx);
+      }else{
+          s->ocref &= ~(1<<idx);
+      }
+      break;
+    case 7:
+      if (elapsed <= oc){
+          s->ocref &= ~(1<<idx);
+      }else{
+          s->ocref |= (1<<idx);
+      }
+      break;
+  }
+
+  MemoryRegion* region = sysbus_mmio_get_region(SYS_BUS_DEVICE(gpio), 0);
+
+  uint32_t changed = old_ocref ^ s->ocref;
+  if (changed & (1<<idx)){
+    if ((s->ocref & (1<<idx)) && !polarity){
+      io_mem_write(region, GPIO_BSRR_OFFSET, (1<<pin), 4);
+    }else if (!(s->ocref & (1<<idx)) && polarity){
+      io_mem_write(region, GPIO_BSRR_OFFSET, (1<<pin), 4);
+    }else{
+      io_mem_write(region, GPIO_BSRR_OFFSET, (1<<(pin+16)), 4);
+    }
+  }
+}
+
+static void stm32_timer_check_cc_state(Stm32Timer *s){
+    if (s->ccer & TIMER_CCER_CC1E && !(s->ccmr1 & 0x3)){
+      stm32_timer_update_ocref(s, 0, s->stm32_gpio[0], 6, s->ccr1, (s->ccmr1>>4) & 7, (s->ccer>>1) & 1);
+    }else if (s->ccer & TIMER_CCER_CC2E && !(s->ccmr1 & 0x300)){
+      stm32_timer_update_ocref(s, 1, s->stm32_gpio[0], 7, s->ccr2, (s->ccmr1>>12) & 7,(s->ccer>>5) & 1);
+    }else if (s->ccer & TIMER_CCER_CC3E && !(s->ccmr2 & 0x3)){
+      stm32_timer_update_ocref(s, 2, s->stm32_gpio[1], 0, s->ccr3, (s->ccmr2>>4) & 7, (s->ccer>>9) & 1);
+    }else if (s->ccer & TIMER_CCER_CC4E && !(s->ccmr2 & 0x300)){
+      stm32_timer_update_ocref(s, 3, s->stm32_gpio[1], 1, s->ccr4, (s->ccmr2>>12) & 7,(s->ccer>>13)& 1);
+    }
+}
 static void stm32_timer_set_count(Stm32Timer *s, uint32_t cnt)
 {
     if (s->countMode == TIMER_UP_COUNT)
@@ -154,6 +232,7 @@ static void stm32_timer_set_count(Stm32Timer *s, uint32_t cnt)
     {
         ptimer_set_count(s->timer, cnt & 0xffff);
     }
+    stm32_timer_check_cc_state(s);
 }
 
 static void stm32_timer_clk_irq_handler(void *opaque, int n, int level)
@@ -169,7 +248,7 @@ static void stm32_timer_update(Stm32Timer *s)
 {
     stm32_timer_freq(s);
 
-    if (s->cr1 & 0x10) /* dir bit */
+    if (s->cr1 & TIMER_CR1_DIR_DOWN) /* dir bit */
     {
         s->countMode = TIMER_DOWN_COUNT;
     }
@@ -178,20 +257,27 @@ static void stm32_timer_update(Stm32Timer *s)
         s->countMode = TIMER_UP_COUNT;
     }
 
-    if (s->cr1 & 0x060) /* CMS */
+    if (s->cr1 & TIMER_CR1_CMS_MASK) /* CMS */
     {
         s->countMode = TIMER_UP_COUNT;
     }
 
-    if (s->cr1 & 0x01) /* timer enable */
+    if (s->cr1 & TIMER_CR1_CEN) /* timer enable */
     {
+        if (s->ccer & TIMER_CCER_CC3E){
+            DPRINTF("%s Enabling capture/compare timer\n", stm32_periph_name(s->periph));
+            ptimer_set_count(s->timer_oc, 0);
+            ptimer_set_limit(s->timer_oc, s->ccr3 & 0xffff, 1);
+            ptimer_run(s->timer_oc, 1);
+        }
         DPRINTF("%s Enabling timer\n", stm32_periph_name(s->periph));
-        ptimer_run(s->timer, !(s->cr1 & 0x04));
+        ptimer_run(s->timer, (s->cr1 & TIMER_CR1_OPM));
     }
     else
     {
         DPRINTF("%s Disabling timer\n", stm32_periph_name(s->periph));
         ptimer_stop(s->timer);
+        ptimer_stop(s->timer_oc);
     }
 }
 
@@ -202,6 +288,11 @@ static void stm32_timer_update_UIF(Stm32Timer *s, uint8_t value) {
     qemu_set_irq(s->irq, value);
 }
 
+static void stm32_timer_oc_tick(void *opaque){
+    Stm32Timer *s = (Stm32Timer *)opaque;
+    DPRINTF("%s CC Alarm raised\n", stm32_periph_name(s->periph));
+    stm32_timer_check_cc_state(s);
+}
 static void stm32_timer_tick(void *opaque)
 {
     Stm32Timer *s = (Stm32Timer *)opaque;
@@ -218,7 +309,7 @@ static void stm32_timer_tick(void *opaque)
         stm32_timer_set_count(s, s->arr);
     }
 
-    if (s->cr1 & 0x0060) /* CMS */
+    if (s->cr1 & TIMER_CR1_CMS_MASK) /* CMS */
     {
         if (s->countMode == TIMER_UP_COUNT)
         {
@@ -230,7 +321,7 @@ static void stm32_timer_tick(void *opaque)
         }
     }
 
-    if (s->cr1 & 0x04) /* one shot */
+    if (s->cr1 & TIMER_CR1_OPM) /* one shot */
     {
         s->cr1 &= 0xFFFE;
     }
@@ -247,7 +338,7 @@ static uint64_t stm32_timer_read(void *opaque, hwaddr offset,
 
     switch (offset) {
     case TIMER_CR1_OFFSET:
-        DPRINTF("%s cr1 = %x\n", stm32_periph_name(s->periph), s->cr1);
+//        DPRINTF("%s cr1 = %x\n", stm32_periph_name(s->periph), s->cr1);
         return s->cr1;
     case TIMER_CR2_OFFSET:
         qemu_log_mask(LOG_GUEST_ERROR, "stm32_timer: CR2 not supported");
@@ -319,7 +410,6 @@ static void stm32_timer_write(void * opaque, hwaddr offset,
                         uint64_t value, unsigned size)
 {
     Stm32Timer *s = (Stm32Timer *)opaque;
-
     switch (offset) {
     case TIMER_CR1_OFFSET:
         s->cr1 = value & 0x3FF;
@@ -445,6 +535,9 @@ static int stm32_timer_init(SysBusDevice *dev)
 
     bh = qemu_bh_new(stm32_timer_tick, s);
     s->timer = ptimer_init(bh);
+
+    bh = qemu_bh_new(stm32_timer_oc_tick, s);
+    s->timer_oc = ptimer_init(bh);
 
     s->cr1   = 0;
     s->dier  = 0;

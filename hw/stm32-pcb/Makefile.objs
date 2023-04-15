@@ -2,3 +2,4 @@ obj-$(CONFIG_STM32) += ledkey.o
 obj-$(CONFIG_STM32) += led.o
 obj-$(CONFIG_STM32) += pcb-bus.o
 obj-$(CONFIG_STM32) += generator.o
+obj-$(CONFIG_STM32) += ds18b20.o

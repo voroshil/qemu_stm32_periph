@@ -169,6 +169,7 @@ static void stm32_gpio_GPIOx_ODR_write(Stm32Gpio *s, uint32_t new_value)
              * the output IRQ.
              */
             if (changed_out & BIT(pin)) {
+if (pin==0) printf("GPIO%c%d => %d\n", ('A'+s->periph-1), pin, (s->GPIOx_ODR & BIT(pin)) ? 1 : 0);
                 qemu_set_irq(
                         /* The "irq_intercept_out" command in the qtest
                            framework overwrites the out IRQ array in the

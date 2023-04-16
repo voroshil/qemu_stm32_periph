@@ -25,6 +25,7 @@
 #include "hw/arm/stm32.h"
 #include "hw/ptimer.h"
 
+#include "hw/stm32-pcb/pcb.h"
 
 /* DEFINITIONS*/
 
@@ -32,8 +33,9 @@
 #define DEBUG_STM32_TIMER
 
 #ifdef DEBUG_STM32_TIMER
-#define DPRINTF(fmt, ...)                                       \
+#define DPRINTF2(fmt, ...)                                       \
     do { fprintf(stderr, "STM32_TIMER: " fmt , ## __VA_ARGS__); } while (0)
+#define DPRINTF(fmt, ...) PCB_DPRINTF("STM32_TIMER " fmt, ## __VA_ARGS__)
 #else
 #define DPRINTF(fmt, ...)
 #endif
@@ -141,6 +143,7 @@ struct Stm32Timer {
 
     uint8_t channel_gpio_port[4];
     uint8_t channel_gpio_pin[4];
+    uint8_t pin_value[4];
 
     uint8_t ocref;
     qemu_irq      irq;
@@ -224,6 +227,7 @@ static void stm32_timer_update_ocref(Stm32Timer *s, uint8_t channel, uint32_t cc
   uint8_t pin = s->channel_gpio_pin[channel];
   uint8_t old_ocref = s->ocref;
 
+  DPRINTF("[%d] mode=%d elapsed=%d, ccr=%d\n", channel, mode, elapsed, ccr);
   switch(mode){
     case 0:
       break;
@@ -272,12 +276,16 @@ static void stm32_timer_update_ocref(Stm32Timer *s, uint8_t channel, uint32_t cc
   }
 }
 
-static void stm32_timer_update_ic(Stm32Timer* s, uint8_t channel, uint32_t *ccr, uint8_t prescaler, uint8_t filter){
+static void stm32_timer_update_ic(Stm32Timer* s, uint8_t channel){
   uint32_t elapsed = stm32_timer_get_count(s);
+//  uint8_t prescaler;
+//  uint8_t filter;
 
-
+  DPRINTF("Update IC%d elapsed = %d\n", channel+1, elapsed);
   switch(channel){
   case 0:
+//    prescaler = TIM_IC1PSC(s);
+//    filter = TIM_IC1F(s);
     s->ccr1 = elapsed & 0xffff;
     if (s->sr & CC1IF_MASK){
       s->sr |= CC1OF_MASK;
@@ -286,6 +294,8 @@ static void stm32_timer_update_ic(Stm32Timer* s, uint8_t channel, uint32_t *ccr,
     }
     break;
   case 1:
+//    prescaler = TIM_IC2PSC(s);
+//    filter = TIM_IC2F(s);
     s->ccr2 = elapsed & 0xffff;
     if (s->sr & CC2IF_MASK){
       s->sr |= CC2OF_MASK;
@@ -294,6 +304,8 @@ static void stm32_timer_update_ic(Stm32Timer* s, uint8_t channel, uint32_t *ccr,
     }
     break;
   case 2:
+//    prescaler = TIM_IC3PSC(s);
+//    filter = TIM_IC3F(s);
     s->ccr3 = elapsed & 0xffff;
     if (s->sr & CC3IF_MASK){
       s->sr |= CC3OF_MASK;
@@ -302,6 +314,8 @@ static void stm32_timer_update_ic(Stm32Timer* s, uint8_t channel, uint32_t *ccr,
     }
     break;
   case 3:
+//    prescaler = TIM_IC4PSC(s);
+//    filter = TIM_IC4F(s);
     s->ccr4 = elapsed & 0xffff;
     if (s->sr & CC4IF_MASK){
       s->sr |= CC4OF_MASK;
@@ -314,22 +328,32 @@ static void stm32_timer_update_ic(Stm32Timer* s, uint8_t channel, uint32_t *ccr,
 
 static void stm32_timer_gpio_trigger(void* opaque, int n, int level){
     Stm32Timer* s = (Stm32Timer*)opaque;
-    if       (n == 0 && TIM_CC1E(s) && TIM_CC1S(s) == 1){
-      stm32_timer_update_ic(s, 0, &s->ccr1, TIM_IC1PSC(s), TIM_IC1F(s));
-    }else if (n == 1 && TIM_CC1E(s) && TIM_CC1S(s) == 2){
-      stm32_timer_update_ic(s, 0, &s->ccr1, TIM_IC1PSC(s), TIM_IC1F(s));
-    }else if (n == 1 && TIM_CC2E(s) && TIM_CC2S(s) == 1){
-      stm32_timer_update_ic(s, 1, &s->ccr2, TIM_IC2PSC(s), TIM_IC2F(s));
-    }else if (n == 0 && TIM_CC2E(s) && TIM_CC2S(s) == 2){
-      stm32_timer_update_ic(s, 1, &s->ccr2, TIM_IC2PSC(s), TIM_IC2F(s));
-    }else if (n == 2 && TIM_CC3E(s) && TIM_CC3S(s) == 1){
-      stm32_timer_update_ic(s, 2, &s->ccr3, TIM_IC3PSC(s), TIM_IC3F(s));
-    }else if (n == 3 && TIM_CC3E(s) && TIM_CC3S(s) == 2){
-      stm32_timer_update_ic(s, 2, &s->ccr3, TIM_IC3PSC(s), TIM_IC3F(s));
-    }else if (n == 3 && TIM_CC4E(s) && TIM_CC4S(s) == 1){
-      stm32_timer_update_ic(s, 3, &s->ccr4, TIM_IC4PSC(s), TIM_IC4F(s));
-    }else if (n == 2 && TIM_CC4E(s) && TIM_CC4S(s) == 2){
-      stm32_timer_update_ic(s, 3, &s->ccr4, TIM_IC4PSC(s), TIM_IC4F(s));
+    uint8_t new_level = level ? 1 : 0;
+    if (s->pin_value[n] == new_level){
+      return;
+    }
+
+    uint8_t falling = new_level ? 0 : 1;
+    s->pin_value[n] = new_level;
+
+    DPRINTF("Timer IC trigger [%d] %x @ %d\n", n, level, stm32_timer_get_count(s));
+
+    if       (n == 0 && TIM_CC1E(s) && TIM_CC1S(s) == 1 && TIM_CC1P(s) == falling){
+      stm32_timer_update_ic(s, 0);
+    }else if (n == 1 && TIM_CC1E(s) && TIM_CC1S(s) == 2 && TIM_CC1P(s) == falling){
+      stm32_timer_update_ic(s, 0);
+    }else if (n == 1 && TIM_CC2E(s) && TIM_CC2S(s) == 1 && TIM_CC2P(s) == falling){
+      stm32_timer_update_ic(s, 1);
+    }else if (n == 0 && TIM_CC2E(s) && TIM_CC2S(s) == 2 && TIM_CC2P(s) == falling){
+      stm32_timer_update_ic(s, 1);
+    }else if (n == 2 && TIM_CC3E(s) && TIM_CC3S(s) == 1 && TIM_CC3P(s) == falling){
+      stm32_timer_update_ic(s, 2);
+    }else if (n == 3 && TIM_CC3E(s) && TIM_CC3S(s) == 2 && TIM_CC3P(s) == falling){
+      stm32_timer_update_ic(s, 2);
+    }else if (n == 3 && TIM_CC4E(s) && TIM_CC4S(s) == 1 && TIM_CC4P(s) == falling){
+      stm32_timer_update_ic(s, 3);
+    }else if (n == 2 && TIM_CC4E(s) && TIM_CC4S(s) == 2 && TIM_CC4P(s) == falling){
+      stm32_timer_update_ic(s, 3);
     }
 }
 static void stm32_timer_check_cc_state(Stm32Timer *s){
@@ -357,7 +381,9 @@ static void stm32_timer_set_count(Stm32Timer *s, uint32_t cnt)
     {
         ptimer_set_count(s->timer, cnt & 0xffff);
     }
+    if (cnt != 0){
     stm32_timer_check_cc_state(s);
+    }
 }
 
 static void stm32_timer_clk_irq_handler(void *opaque, int n, int level)
@@ -389,27 +415,27 @@ static void stm32_timer_update(Stm32Timer *s)
 
     if (s->cr1 & TIMER_CR1_CEN) /* timer enable */
     {
-        if (s->ccer & TIMER_CCER_CC1E){
+        if (TIM_CC1E(s) && TIM_CC1S(s) == 0){
             DPRINTF("%s Enabling capture/compare 1 timer\n", stm32_periph_name(s->periph));
-            ptimer_set_count(s->timer_cc1, 0);
+            ptimer_stop(s->timer_cc3);
             ptimer_set_limit(s->timer_cc1, s->ccr1 & 0xffff, 1);
             ptimer_run(s->timer_cc1, 1);
         }
-        if (s->ccer & TIMER_CCER_CC2E){
+        if (TIM_CC2E(s) && TIM_CC2S(s) == 0){
             DPRINTF("%s Enabling capture/compare 2 timer\n", stm32_periph_name(s->periph));
-            ptimer_set_count(s->timer_cc2, 0);
+            ptimer_stop(s->timer_cc3);
             ptimer_set_limit(s->timer_cc2, s->ccr2 & 0xffff, 1);
             ptimer_run(s->timer_cc2, 1);
         }
-        if (s->ccer & TIMER_CCER_CC3E){
+        if (TIM_CC3E(s) && TIM_CC3S(s) == 0){
             DPRINTF("%s Enabling capture/compare 3 timer\n", stm32_periph_name(s->periph));
-            ptimer_set_count(s->timer_cc3, 0);
+            ptimer_stop(s->timer_cc3);
             ptimer_set_limit(s->timer_cc3, s->ccr3 & 0xffff, 1);
             ptimer_run(s->timer_cc3, 1);
         }
-        if (s->ccer & TIMER_CCER_CC4E){
+        if (TIM_CC4E(s) && TIM_CC4S(s) == 0){
             DPRINTF("%s Enabling capture/compare 4 timer\n", stm32_periph_name(s->periph));
-            ptimer_set_count(s->timer_cc4, 0);
+            ptimer_stop(s->timer_cc3);
             ptimer_set_limit(s->timer_cc4, s->ccr4 & 0xffff, 1);
             ptimer_run(s->timer_cc4, 1);
         }
@@ -436,22 +462,26 @@ static void stm32_timer_update_UIF(Stm32Timer *s, uint8_t value) {
 
 static void stm32_timer_cc1_tick(void *opaque){
     Stm32Timer *s = (Stm32Timer *)opaque;
-    DPRINTF("%s CC 1 Alarm raised\n", stm32_periph_name(s->periph));
+    uint32_t elapsed = stm32_timer_get_count(s);
+    DPRINTF("%s CC 1 Alarm raised @ %d\n", stm32_periph_name(s->periph), elapsed);
     stm32_timer_check_cc_state(s);
 }
 static void stm32_timer_cc2_tick(void *opaque){
     Stm32Timer *s = (Stm32Timer *)opaque;
-    DPRINTF("%s CC 2 Alarm raised\n", stm32_periph_name(s->periph));
+    uint32_t elapsed = stm32_timer_get_count(s);
+    DPRINTF("%s CC 2 Alarm raised @ %d\n", stm32_periph_name(s->periph), elapsed);
     stm32_timer_check_cc_state(s);
 }
 static void stm32_timer_cc3_tick(void *opaque){
     Stm32Timer *s = (Stm32Timer *)opaque;
-    DPRINTF("%s CC 3 Alarm raised\n", stm32_periph_name(s->periph));
+    uint32_t elapsed = stm32_timer_get_count(s);
+    DPRINTF("%s CC 3 Alarm raised @ %d\n", stm32_periph_name(s->periph), elapsed);
     stm32_timer_check_cc_state(s);
 }
 static void stm32_timer_cc4_tick(void *opaque){
     Stm32Timer *s = (Stm32Timer *)opaque;
-    DPRINTF("%s CC 4 Alarm raised\n", stm32_periph_name(s->periph));
+    uint32_t elapsed = stm32_timer_get_count(s);
+    DPRINTF("%s CC 3 Alarm raised @ %d\n", stm32_periph_name(s->periph), elapsed);
     stm32_timer_check_cc_state(s);
 }
 static void stm32_timer_tick(void *opaque)
@@ -460,6 +490,8 @@ static void stm32_timer_tick(void *opaque)
     DPRINTF("%s Alarm raised\n", stm32_periph_name(s->periph));
     s->itr = 1;
     stm32_timer_update_UIF(s, 1);
+
+//    stm32_timer_check_cc_state(s);
 
     if (s->countMode == TIMER_UP_COUNT)
     {
@@ -488,6 +520,7 @@ static void stm32_timer_tick(void *opaque)
     }
     else
     {
+DPRINTF("Restart\n");
         stm32_timer_update(s);
     }
 }
@@ -577,10 +610,17 @@ static void stm32_timer_write(void * opaque, hwaddr offset,
     Stm32Timer *s = (Stm32Timer *)opaque;
     switch (offset) {
     case TIMER_CR1_OFFSET:
+    {
+        uint32_t  timer_start = !(s->cr1 & 1) && (value & 1) ;
+
         s->cr1 = value & 0x3FF;
         DPRINTF("%s cr1 = %x\n", stm32_periph_name(s->periph), s->cr1);
         stm32_timer_update(s);
+        if(timer_start){
+          stm32_timer_check_cc_state(s);
+        }
         break;
+    }
     case TIMER_CR2_OFFSET:
         /* s->cr2 = value & 0xF8; */
         qemu_log_mask(LOG_GUEST_ERROR, "stm32_timer: CR2 not supported");

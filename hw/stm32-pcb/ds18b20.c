@@ -8,10 +8,20 @@
 #include <inttypes.h>
 #define STM32_PC13 STM32_GPIO_INDEX(STM32_GPIOC_INDEX, 13)
 
+static const char* states[] = {
+  "IDLE",
+  "RESET_START",
+  "RESET_END",
+  "PRESENCE_START",
+  "READ_START",
+  "READ_END",
+};
 #define STATE_IDLE           0
 #define STATE_RESET_START    1
 #define STATE_RESET_END      2
 #define STATE_PRESENCE_START 3
+#define STATE_READ_START     4
+#define STATE_READ_END       5
 
 
 #define EVT_TIMER_RESET  1
@@ -43,22 +53,21 @@ typedef struct  {
 #define TYPE_STM32_DS18B20 "stm32-periph-ds18b20"
 #define STM32_DS18B20(obj) OBJECT_CHECK(Ds18b20State, (obj), TYPE_STM32_DS18B20)
 
-
 static void stm32_ds18b20_set_pin(Ds18b20State * s, int level){
     PCBBus * bus = PCB_BUS(DEVICE(&s->busdev)->parent_bus);
-    printf("DS18B20[0x%02x]: pin => %d\n", s->busdev.addr, level);
+    PCB_DPRINTF("DS18B20 0x%02x: pin => %d\n", s->busdev.addr, level);
     bus->gpio_set_value(bus, s->data_gpio, level ? 3300: 0);
 }
 
 static void stm32_ds18b20_delay(Ds18b20State* s, int delay){
     ptimer_stop(s->pulse_timer);
     ptimer_set_limit(s->pulse_timer, delay, 1);
-    ptimer_set_count(s->pulse_timer, 0);
+    ptimer_set_count(s->pulse_timer, delay);
     ptimer_run(s->pulse_timer, 1);
 }
 
 static void stm32_ds18b20_fsm_reset(Ds18b20State *s){
-    printf("DS18B20[0x%02x]: reset detected!\n", s->busdev.addr);
+    PCB_DPRINTF("DS18B20 0x%02x: reset detected\n", s->busdev.addr);
     s->state = STATE_RESET_START;
     ptimer_stop(s->pulse_timer);
     ptimer_set_count(s->pulse_timer, 0);
@@ -73,11 +82,23 @@ static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
     }else if (s->state == STATE_RESET_START && event == EVT_EDGE_RAISING){
       s->state = STATE_RESET_END;
       stm32_ds18b20_delay(s, 30);
-    }else if (s->state == STATE_PRESENCE_START){
-      s->state = STATE_IDLE;
+    }else if (s->state == STATE_PRESENCE_START && event == EVT_TIMER_PULSE){
+      s->state = STATE_READ_START;
       stm32_ds18b20_set_pin(s, 1);
+    }else if (s->state == STATE_READ_START && event == EVT_EDGE_FALLING){
+      stm32_ds18b20_delay(s, 500);
+    }else if (s->state == STATE_READ_START && event == EVT_EDGE_RAISING){
+      uint32_t len = 500 - ptimer_get_count(s->pulse_timer);
+      if (len <= 15){
+        PCB_DPRINTF("DS18B20 0x%02x: ONE detected @ %d\n", s->busdev.addr, len);
+      }else if (len < 450){
+        PCB_DPRINTF("DS18B20 0x%02x: ZERO detected @ %d\n", s->busdev.addr, len);
+      }else{
+        stm32_ds18b20_fsm_reset(s);
+      }
+      ptimer_stop(s->pulse_timer);
     }
-    printf("DS18B20[0x%02x]: state => %d!\n", s->busdev.addr, s->state);
+    PCB_DPRINTF("DS18B20 0x%02x: state => %s!\n", s->busdev.addr, states[s->state]);
 }
 static void stm32_ds18b20_reset_tick(void *opaque){
     stm32_ds18b20_fsm_reset((Ds18b20State*)opaque);
@@ -104,16 +125,17 @@ static void stm32_ds18b20_irq_handler(void *opaque, int n, int level)
     uint8_t active = new_value;
     if (changed && active){
       qapi_event_send_x_pcb(pd->addr, "DS18B20", 1, &error_abort);
-      printf("DS18B20[%s]: on\n", ((DeviceState*)s)->id);
+      PCB_DPRINTF("DS18B20 0x%02x: on\n", s->busdev.addr);
 
       ptimer_stop(s->reset_timer);
 
       stm32_ds18b20_fsm(s, EVT_EDGE_RAISING);
     }else if (changed){
       qapi_event_send_x_pcb(pd->addr, "DS18B20", 0, &error_abort);
-      printf("DS18B20[%s]: off\n", ((DeviceState*)s)->id);
+      PCB_DPRINTF("DS18B20 0x%02x: off\n", s->busdev.addr);
 
-      ptimer_set_count(s->reset_timer, 0);
+      ptimer_stop(s->reset_timer);
+      ptimer_set_limit(s->reset_timer, RESET_THRESHOLD, 1);
       ptimer_run(s->reset_timer, 1);
 
       stm32_ds18b20_fsm(s, EVT_EDGE_FALLING);
@@ -171,6 +193,8 @@ static void stm32_ds18b20_realize(DeviceState *dev, Error **errp)
     s->pulse_timer = ptimer_init(bh);
     // Ticks in microseconds
     ptimer_set_freq(s->reset_timer, 1000000);
+    ptimer_set_limit(s->reset_timer, RESET_THRESHOLD, 1);
+
     ptimer_set_freq(s->pulse_timer, 1000000);
 
     stm32_ds18b20_reset((DeviceState *)s);

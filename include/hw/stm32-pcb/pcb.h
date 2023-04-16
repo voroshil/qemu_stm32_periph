@@ -59,4 +59,18 @@ struct PCBDevice {
 #define STM32_PORT_INDEX(gpio) ((gpio>>4) & 0xf)
 #define STM32_PIN_INDEX(gpio) (gpio & 0xf)
 
+
+#define DEBUG_STM32_PCB 1
+
+#ifdef DEBUG_STM32_PCB
+#define PCB_DPRINTF(fmt, ...)                         \
+    do {                                                \
+    qemu_timeval tv;                                    \
+    qemu_gettimeofday(&tv);                             \
+    fprintf(stderr, "[%ld.%ld]:" fmt , tv.tv_sec, tv.tv_usec, ## __VA_ARGS__);  \
+    } while (0)
+#else
+#define PCB_DPRINTF(fmt, ...)
+#endif
+
 #endif

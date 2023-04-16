@@ -46,6 +46,7 @@ typedef struct  {
 
 static void stm32_ds18b20_set_pin(Ds18b20State * s, int level){
     PCBBus * bus = PCB_BUS(DEVICE(&s->busdev)->parent_bus);
+    printf("DS18B20[0x%02x]: pin => %d\n", s->busdev.addr, level);
     bus->gpio_set_value(bus, s->data_gpio, level ? 3300: 0);
 }
 
@@ -76,6 +77,7 @@ static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
       s->state = STATE_IDLE;
       stm32_ds18b20_set_pin(s, 1);
     }
+    printf("DS18B20[0x%02x]: state => %d!\n", s->busdev.addr, s->state);
 }
 static void stm32_ds18b20_reset_tick(void *opaque){
     stm32_ds18b20_fsm_reset((Ds18b20State*)opaque);

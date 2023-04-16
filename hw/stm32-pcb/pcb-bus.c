@@ -148,6 +148,7 @@ static void stm32_pcb_gpio_set_value(PCBBus* bus, uint16_t gpio, int value){
     PCBBridgeDevice *dev = PCB_BRIDGE(BUS(bus)->parent);
     DeviceState* gpio_dev = dev->gpio[port];
     if (gpio_dev){
+if (gpio == 0x10) printf("PCB:XXX:%x:%d\n",gpio,value);
         qemu_irq irq = qdev_get_gpio_in(gpio_dev, pin);
         if (irq){
             uint8_t config = stm32_gpio_get_config_bits(STM32_GPIO(gpio_dev), pin);

@@ -69,8 +69,58 @@
 #define TIMER_CCER_CC2E   (1<<4)
 #define TIMER_CCER_CC1E   (1<<0)
 
+#define TIM_OC1M(a) ((a->ccmr1>>4)&7)
+#define TIM_OC2M(a) ((a->ccmr1>>12)&7)
+#define TIM_OC3M(a) ((a->ccmr2>>4)&7)
+#define TIM_OC4M(a) ((a->ccmr2>>12)&7)
 
-#define GPIO_BSRR_OFFSET 0x10
+#define TIM_CC1P(a) ((a->ccer>>1)&1)
+#define TIM_CC2P(a) ((a->ccer>>5)&1)
+#define TIM_CC3P(a) ((a->ccer>>9)&1)
+#define TIM_CC4P(a) ((a->ccer>>13)&1)
+
+#define TIM_CC1S(a) ((a->ccmr1) &3)
+#define TIM_CC2S(a) ((a->ccmr1>>8) &3)
+#define TIM_CC3S(a) ((a->ccmr2) &3)
+#define TIM_CC4S(a) ((a->ccmr2>>8) &3)
+
+#define TIM_CC1E(a) ((a->ccer) & 1)
+#define TIM_CC2E(a) ((a->ccer>>4) & 1)
+#define TIM_CC3E(a) ((a->ccer>>8) & 1)
+#define TIM_CC4E(a) ((a->ccer>>12) & 1)
+
+#define TIM_IC1PSC(a) (((a->ccmr1)>>2) & 3)
+#define TIM_IC2PSC(a) (((a->ccmr1)>>10) & 3)
+#define TIM_IC3PSC(a) (((a->ccmr2)>>2) & 3)
+#define TIM_IC4PSC(a) (((a->ccmr2)>>10) & 3)
+
+#define TIM_IC1F(a) ((a->ccmr1>>4) & 0xf)
+#define TIM_IC2F(a) ((a->ccmr1>>12) & 0xf)
+#define TIM_IC3F(a) ((a->ccmr2>>4) & 0xf)
+#define TIM_IC4F(a) ((a->ccmr2>>12) & 0xf)
+
+#define CC1IF_MASK (1<<1)
+#define CC2IF_MASK (1<<2)
+#define CC3IF_MASK (1<<3)
+#define CC4IF_MASK (1<<4)
+
+#define CC1OF_MASK (1<<9)
+#define CC2OF_MASK (1<<10)
+#define CC3OF_MASK (1<<11)
+#define CC4OF_MASK (1<<12)
+
+#define TIM3_CH1_PORT 0
+#define TIM3_CH2_PORT 0
+#define TIM3_CH3_PORT 1
+#define TIM3_CH4_PORT 1
+
+#define TIM3_CH1_PIN 6
+#define TIM3_CH2_PIN 7
+#define TIM3_CH3_PIN 0
+#define TIM3_CH4_PIN 1
+
+#define GPIOx_BSRR_OFFSET 0x10
+#define GPIOx_IDR_OFFSET 0x08
 enum
 {
     TIMER_UP_COUNT     = 0,
@@ -84,7 +134,14 @@ struct Stm32Timer {
 
     MemoryRegion  iomem;
     ptimer_state *timer;
-    ptimer_state *timer_oc;
+    ptimer_state *timer_cc1;
+    ptimer_state *timer_cc2;
+    ptimer_state *timer_cc3;
+    ptimer_state *timer_cc4;
+
+    uint8_t channel_gpio_port[4];
+    uint8_t channel_gpio_pin[4];
+
     uint8_t ocref;
     qemu_irq      irq;
 
@@ -140,7 +197,10 @@ static void stm32_timer_freq(Stm32Timer *s)
     );
     if(clk_freq != 0) {
         ptimer_set_freq(s->timer, clk_freq);
-        ptimer_set_freq(s->timer_oc, clk_freq);
+        ptimer_set_freq(s->timer_cc1, clk_freq);
+        ptimer_set_freq(s->timer_cc2, clk_freq);
+        ptimer_set_freq(s->timer_cc3, clk_freq);
+        ptimer_set_freq(s->timer_cc4, clk_freq);
     }
 }
 
@@ -157,42 +217,43 @@ static uint32_t stm32_timer_get_count(Stm32Timer *s)
     }
 }
 
-static void stm32_timer_update_ocref(Stm32Timer *s, uint8_t idx, Stm32Gpio *gpio, uint8_t pin, uint32_t ccr, uint8_t mode, uint8_t polarity){
+static void stm32_timer_update_ocref(Stm32Timer *s, uint8_t channel, uint32_t ccr, uint8_t mode, uint8_t polarity){
   uint32_t elapsed = stm32_timer_get_count(s);
   uint32_t oc = ccr & 0xffff;
-
+  Stm32Gpio *gpio = s->stm32_gpio[s->channel_gpio_port[channel]];
+  uint8_t pin = s->channel_gpio_pin[channel];
   uint8_t old_ocref = s->ocref;
 
   switch(mode){
     case 0:
       break;
     case 1:
-      if (elapsed >= oc) s->ocref |= (1<<idx);
+      if (elapsed >= oc) s->ocref |= (1<<channel);
       break;
     case 2:
-      if (elapsed >= oc) s->ocref &= ~(1<<idx);
+      if (elapsed >= oc) s->ocref &= ~(1<<channel);
       break;
     case 3:
-      if (elapsed >= oc) s->ocref ^= (1<<idx);
+      if (elapsed >= oc) s->ocref ^= (1<<channel);
       break;
     case 4:
-      s->ocref &= ~(1<<idx);
+      s->ocref &= ~(1<<channel);
       break;
     case 5:
-      s->ocref |= (1<<idx);
+      s->ocref |= (1<<channel);
       break;
     case 6:
       if (elapsed <= oc){
-          s->ocref |= (1<<idx);
+          s->ocref |= (1<<channel);
       }else{
-          s->ocref &= ~(1<<idx);
+          s->ocref &= ~(1<<channel);
       }
       break;
     case 7:
       if (elapsed <= oc){
-          s->ocref &= ~(1<<idx);
+          s->ocref &= ~(1<<channel);
       }else{
-          s->ocref |= (1<<idx);
+          s->ocref |= (1<<channel);
       }
       break;
   }
@@ -200,26 +261,90 @@ static void stm32_timer_update_ocref(Stm32Timer *s, uint8_t idx, Stm32Gpio *gpio
   MemoryRegion* region = sysbus_mmio_get_region(SYS_BUS_DEVICE(gpio), 0);
 
   uint32_t changed = old_ocref ^ s->ocref;
-  if (changed & (1<<idx)){
-    if ((s->ocref & (1<<idx)) && !polarity){
-      io_mem_write(region, GPIO_BSRR_OFFSET, (1<<pin), 4);
-    }else if (!(s->ocref & (1<<idx)) && polarity){
-      io_mem_write(region, GPIO_BSRR_OFFSET, (1<<pin), 4);
+  if (changed & (1<<channel)){
+    if ((s->ocref & (1<<channel)) && !polarity){
+      io_mem_write(region, GPIOx_BSRR_OFFSET, (1<<pin), 4);
+    }else if (!(s->ocref & (1<<channel)) && polarity){
+      io_mem_write(region, GPIOx_BSRR_OFFSET, (1<<pin), 4);
     }else{
-      io_mem_write(region, GPIO_BSRR_OFFSET, (1<<(pin+16)), 4);
+      io_mem_write(region, GPIOx_BSRR_OFFSET, (1<<(pin+16)), 4);
     }
   }
 }
 
+static void stm32_timer_update_ic(Stm32Timer* s, uint8_t channel, uint32_t *ccr, uint8_t prescaler, uint8_t filter){
+  uint32_t elapsed = stm32_timer_get_count(s);
+
+
+  switch(channel){
+  case 0:
+    s->ccr1 = elapsed & 0xffff;
+    if (s->sr & CC1IF_MASK){
+      s->sr |= CC1OF_MASK;
+    }else{
+      s->sr |= CC1IF_MASK;
+    }
+    break;
+  case 1:
+    s->ccr2 = elapsed & 0xffff;
+    if (s->sr & CC2IF_MASK){
+      s->sr |= CC2OF_MASK;
+    }else{
+      s->sr |= CC2IF_MASK;
+    }
+    break;
+  case 2:
+    s->ccr3 = elapsed & 0xffff;
+    if (s->sr & CC3IF_MASK){
+      s->sr |= CC3OF_MASK;
+    }else{
+      s->sr |= CC3IF_MASK;
+    }
+    break;
+  case 3:
+    s->ccr4 = elapsed & 0xffff;
+    if (s->sr & CC4IF_MASK){
+      s->sr |= CC4OF_MASK;
+    }else{
+      s->sr |= CC4IF_MASK;
+    }
+    break;
+  }
+}
+
+static void stm32_timer_gpio_trigger(void* opaque, int n, int level){
+    Stm32Timer* s = (Stm32Timer*)opaque;
+    if       (n == 0 && TIM_CC1E(s) && TIM_CC1S(s) == 1){
+      stm32_timer_update_ic(s, 0, &s->ccr1, TIM_IC1PSC(s), TIM_IC1F(s));
+    }else if (n == 1 && TIM_CC1E(s) && TIM_CC1S(s) == 2){
+      stm32_timer_update_ic(s, 0, &s->ccr1, TIM_IC1PSC(s), TIM_IC1F(s));
+    }else if (n == 1 && TIM_CC2E(s) && TIM_CC2S(s) == 1){
+      stm32_timer_update_ic(s, 1, &s->ccr2, TIM_IC2PSC(s), TIM_IC2F(s));
+    }else if (n == 0 && TIM_CC2E(s) && TIM_CC2S(s) == 2){
+      stm32_timer_update_ic(s, 1, &s->ccr2, TIM_IC2PSC(s), TIM_IC2F(s));
+    }else if (n == 2 && TIM_CC3E(s) && TIM_CC3S(s) == 1){
+      stm32_timer_update_ic(s, 2, &s->ccr3, TIM_IC3PSC(s), TIM_IC3F(s));
+    }else if (n == 3 && TIM_CC3E(s) && TIM_CC3S(s) == 2){
+      stm32_timer_update_ic(s, 2, &s->ccr3, TIM_IC3PSC(s), TIM_IC3F(s));
+    }else if (n == 3 && TIM_CC4E(s) && TIM_CC4S(s) == 1){
+      stm32_timer_update_ic(s, 3, &s->ccr4, TIM_IC4PSC(s), TIM_IC4F(s));
+    }else if (n == 2 && TIM_CC4E(s) && TIM_CC4S(s) == 2){
+      stm32_timer_update_ic(s, 3, &s->ccr4, TIM_IC4PSC(s), TIM_IC4F(s));
+    }
+}
 static void stm32_timer_check_cc_state(Stm32Timer *s){
-    if (s->ccer & TIMER_CCER_CC1E && !(s->ccmr1 & 0x3)){
-      stm32_timer_update_ocref(s, 0, s->stm32_gpio[0], 6, s->ccr1, (s->ccmr1>>4) & 7, (s->ccer>>1) & 1);
-    }else if (s->ccer & TIMER_CCER_CC2E && !(s->ccmr1 & 0x300)){
-      stm32_timer_update_ocref(s, 1, s->stm32_gpio[0], 7, s->ccr2, (s->ccmr1>>12) & 7,(s->ccer>>5) & 1);
-    }else if (s->ccer & TIMER_CCER_CC3E && !(s->ccmr2 & 0x3)){
-      stm32_timer_update_ocref(s, 2, s->stm32_gpio[1], 0, s->ccr3, (s->ccmr2>>4) & 7, (s->ccer>>9) & 1);
-    }else if (s->ccer & TIMER_CCER_CC4E && !(s->ccmr2 & 0x300)){
-      stm32_timer_update_ocref(s, 3, s->stm32_gpio[1], 1, s->ccr4, (s->ccmr2>>12) & 7,(s->ccer>>13)& 1);
+
+    if (TIM_CC1E(s) && TIM_CC1S(s) == 0){
+        stm32_timer_update_ocref(s, 0, s->ccr1, TIM_OC1M(s), TIM_CC1P(s));
+    }
+    if (TIM_CC2E(s) && TIM_CC2S(s) == 0){
+        stm32_timer_update_ocref(s, 1, s->ccr2, TIM_OC2M(s), TIM_CC2P(s));
+    }
+    if (TIM_CC3E(s) && TIM_CC3S(s) == 0){
+        stm32_timer_update_ocref(s, 2, s->ccr3, TIM_OC3M(s), TIM_CC3P(s));
+    }
+    if (TIM_CC4E(s) && TIM_CC4S(s) == 0){
+        stm32_timer_update_ocref(s, 3, s->ccr4, TIM_OC4M(s), TIM_CC4P(s));
     }
 }
 static void stm32_timer_set_count(Stm32Timer *s, uint32_t cnt)
@@ -264,11 +389,29 @@ static void stm32_timer_update(Stm32Timer *s)
 
     if (s->cr1 & TIMER_CR1_CEN) /* timer enable */
     {
+        if (s->ccer & TIMER_CCER_CC1E){
+            DPRINTF("%s Enabling capture/compare 1 timer\n", stm32_periph_name(s->periph));
+            ptimer_set_count(s->timer_cc1, 0);
+            ptimer_set_limit(s->timer_cc1, s->ccr1 & 0xffff, 1);
+            ptimer_run(s->timer_cc1, 1);
+        }
+        if (s->ccer & TIMER_CCER_CC2E){
+            DPRINTF("%s Enabling capture/compare 2 timer\n", stm32_periph_name(s->periph));
+            ptimer_set_count(s->timer_cc2, 0);
+            ptimer_set_limit(s->timer_cc2, s->ccr2 & 0xffff, 1);
+            ptimer_run(s->timer_cc2, 1);
+        }
         if (s->ccer & TIMER_CCER_CC3E){
-            DPRINTF("%s Enabling capture/compare timer\n", stm32_periph_name(s->periph));
-            ptimer_set_count(s->timer_oc, 0);
-            ptimer_set_limit(s->timer_oc, s->ccr3 & 0xffff, 1);
-            ptimer_run(s->timer_oc, 1);
+            DPRINTF("%s Enabling capture/compare 3 timer\n", stm32_periph_name(s->periph));
+            ptimer_set_count(s->timer_cc3, 0);
+            ptimer_set_limit(s->timer_cc3, s->ccr3 & 0xffff, 1);
+            ptimer_run(s->timer_cc3, 1);
+        }
+        if (s->ccer & TIMER_CCER_CC4E){
+            DPRINTF("%s Enabling capture/compare 4 timer\n", stm32_periph_name(s->periph));
+            ptimer_set_count(s->timer_cc4, 0);
+            ptimer_set_limit(s->timer_cc4, s->ccr4 & 0xffff, 1);
+            ptimer_run(s->timer_cc4, 1);
         }
         DPRINTF("%s Enabling timer\n", stm32_periph_name(s->periph));
         ptimer_run(s->timer, (s->cr1 & TIMER_CR1_OPM));
@@ -277,7 +420,10 @@ static void stm32_timer_update(Stm32Timer *s)
     {
         DPRINTF("%s Disabling timer\n", stm32_periph_name(s->periph));
         ptimer_stop(s->timer);
-        ptimer_stop(s->timer_oc);
+        ptimer_stop(s->timer_cc1);
+        ptimer_stop(s->timer_cc2);
+        ptimer_stop(s->timer_cc3);
+        ptimer_stop(s->timer_cc4);
     }
 }
 
@@ -288,9 +434,24 @@ static void stm32_timer_update_UIF(Stm32Timer *s, uint8_t value) {
     qemu_set_irq(s->irq, value);
 }
 
-static void stm32_timer_oc_tick(void *opaque){
+static void stm32_timer_cc1_tick(void *opaque){
     Stm32Timer *s = (Stm32Timer *)opaque;
-    DPRINTF("%s CC Alarm raised\n", stm32_periph_name(s->periph));
+    DPRINTF("%s CC 1 Alarm raised\n", stm32_periph_name(s->periph));
+    stm32_timer_check_cc_state(s);
+}
+static void stm32_timer_cc2_tick(void *opaque){
+    Stm32Timer *s = (Stm32Timer *)opaque;
+    DPRINTF("%s CC 2 Alarm raised\n", stm32_periph_name(s->periph));
+    stm32_timer_check_cc_state(s);
+}
+static void stm32_timer_cc3_tick(void *opaque){
+    Stm32Timer *s = (Stm32Timer *)opaque;
+    DPRINTF("%s CC 3 Alarm raised\n", stm32_periph_name(s->periph));
+    stm32_timer_check_cc_state(s);
+}
+static void stm32_timer_cc4_tick(void *opaque){
+    Stm32Timer *s = (Stm32Timer *)opaque;
+    DPRINTF("%s CC 4 Alarm raised\n", stm32_periph_name(s->periph));
     stm32_timer_check_cc_state(s);
 }
 static void stm32_timer_tick(void *opaque)
@@ -378,15 +539,19 @@ static uint64_t stm32_timer_read(void *opaque, hwaddr offset,
         return 0;
     case TIMER_CCR1_OFFSET:
         DPRINTF("%s ccr1 = %x\n", stm32_periph_name(s->periph), s->ccr1);
+        s->sr &= ~CC1IF_MASK;
         return s->ccr1;
     case TIMER_CCR2_OFFSET:
         DPRINTF("%s ccr2 = %x\n", stm32_periph_name(s->periph), s->ccr2);
+        s->sr &= ~CC2IF_MASK;
         return s->ccr2;
     case TIMER_CCR3_OFFSET:
         DPRINTF("%s ccr3 = %x\n", stm32_periph_name(s->periph), s->ccr3);
+        s->sr &= ~CC3IF_MASK;
         return s->ccr3;
     case TIMER_CCR4_OFFSET:
         DPRINTF("%s ccr4 = %x\n", stm32_periph_name(s->periph), s->ccr4);
+        s->sr &= ~CC4IF_MASK;
         return s->ccr4;
     case TIMER_BDTR_OFFSET:
         qemu_log_mask(LOG_GUEST_ERROR, "stm32_timer: BDTR not supported");
@@ -513,7 +678,23 @@ static const MemoryRegionOps stm32_timer_ops = {
     .write = stm32_timer_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
+static void stm32_timer_channel_gpio_connect(Stm32Timer* s, int channel, qemu_irq irq){
+    if (s->channel_gpio_port[channel] >= STM32_GPIO_COUNT || s->channel_gpio_pin[channel] >= STM32_GPIO_PIN_COUNT){
+        return;
+    }
+    SysBusDevice * sd = SYS_BUS_DEVICE(s->stm32_gpio[s->channel_gpio_port[channel]]);
+    uint8_t pin = s->channel_gpio_pin[channel];
 
+    qemu_irq new_irq = irq;
+
+    /* HACK to mutiplex IRQ */
+    if (sd->irqp[pin] && *sd->irqp[pin]){
+      qemu_irq old_irq = *sd->irqp[pin];
+      new_irq = qemu_irq_split(old_irq, irq);
+    }
+
+    sysbus_connect_irq(sd, pin, new_irq);
+}
 static int stm32_timer_init(SysBusDevice *dev)
 {
     QEMUBH *bh;
@@ -529,6 +710,32 @@ static int stm32_timer_init(SysBusDevice *dev)
 
     sysbus_init_irq(dev, &s->irq);
 
+    qemu_irq* channel_irqs = qemu_allocate_irqs(stm32_timer_gpio_trigger, s, 4);
+    if (s->periph == STM32_TIM3){
+      s->channel_gpio_port[0] = 0;
+      s->channel_gpio_port[1] = 0;
+      s->channel_gpio_port[2] = 1;
+      s->channel_gpio_port[3] = 1;
+      s->channel_gpio_pin[0] = 6;
+      s->channel_gpio_pin[1] = 7;
+      s->channel_gpio_pin[2] = 0;
+      s->channel_gpio_pin[3] = 1;
+    }else{
+      s->channel_gpio_port[0] = STM32_GPIO_COUNT;
+      s->channel_gpio_port[1] = STM32_GPIO_COUNT;
+      s->channel_gpio_port[2] = STM32_GPIO_COUNT;
+      s->channel_gpio_port[3] = STM32_GPIO_COUNT;
+
+      s->channel_gpio_pin[0] = STM32_GPIO_PIN_COUNT;
+      s->channel_gpio_pin[1] = STM32_GPIO_PIN_COUNT;
+      s->channel_gpio_pin[2] = STM32_GPIO_PIN_COUNT;
+      s->channel_gpio_pin[3] = STM32_GPIO_PIN_COUNT;
+    }
+    stm32_timer_channel_gpio_connect(s, 0, channel_irqs[0]);
+    stm32_timer_channel_gpio_connect(s, 1, channel_irqs[1]);
+    stm32_timer_channel_gpio_connect(s, 2, channel_irqs[2]);
+    stm32_timer_channel_gpio_connect(s, 3, channel_irqs[3]);
+
     /* Register handlers to handle updates to the TIM's peripheral clock. */
     clk_irq = qemu_allocate_irqs(stm32_timer_clk_irq_handler, (void *)s, 1);
     stm32_rcc_set_periph_clk_irq(s->stm32_rcc, s->periph, clk_irq[0]);
@@ -536,8 +743,14 @@ static int stm32_timer_init(SysBusDevice *dev)
     bh = qemu_bh_new(stm32_timer_tick, s);
     s->timer = ptimer_init(bh);
 
-    bh = qemu_bh_new(stm32_timer_oc_tick, s);
-    s->timer_oc = ptimer_init(bh);
+    bh = qemu_bh_new(stm32_timer_cc1_tick, s);
+    s->timer_cc1 = ptimer_init(bh);
+    bh = qemu_bh_new(stm32_timer_cc2_tick, s);
+    s->timer_cc2 = ptimer_init(bh);
+    bh = qemu_bh_new(stm32_timer_cc3_tick, s);
+    s->timer_cc3 = ptimer_init(bh);
+    bh = qemu_bh_new(stm32_timer_cc4_tick, s);
+    s->timer_cc4 = ptimer_init(bh);
 
     s->cr1   = 0;
     s->dier  = 0;

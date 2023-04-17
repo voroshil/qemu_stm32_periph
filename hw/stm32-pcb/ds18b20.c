@@ -40,9 +40,11 @@ typedef struct  {
 
     /* Properties */
     uint16_t data_gpio;
-    ptimer_state *reset_timer;
     ptimer_state *pulse_timer;
     uint8_t state;
+
+    qemu_timeval tv_fall;
+    qemu_timeval tv_raise;
 
     /* Private */
 
@@ -53,6 +55,18 @@ typedef struct  {
 #define TYPE_STM32_DS18B20 "stm32-periph-ds18b20"
 #define STM32_DS18B20(obj) OBJECT_CHECK(Ds18b20State, (obj), TYPE_STM32_DS18B20)
 
+static uint32_t get_pulse_len(Ds18b20State *s){
+  if (s->tv_raise.tv_sec < s->tv_fall.tv_sec)
+    return 0;
+
+  uint32_t len = s->tv_raise.tv_sec - s->tv_fall.tv_sec;
+  if (len > 2){
+    return 2000000;
+  }
+  len += (s->tv_raise.tv_usec - s->tv_fall.tv_usec);
+
+  return len;
+}
 static void stm32_ds18b20_set_pin(Ds18b20State * s, int level){
     PCBBus * bus = PCB_BUS(DEVICE(&s->busdev)->parent_bus);
     PCB_DPRINTF("DS18B20 0x%02x: pin => %d\n", s->busdev.addr, level);
@@ -88,7 +102,8 @@ static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
     }else if (s->state == STATE_READ_START && event == EVT_EDGE_FALLING){
       stm32_ds18b20_delay(s, 500);
     }else if (s->state == STATE_READ_START && event == EVT_EDGE_RAISING){
-      uint32_t len = 500 - ptimer_get_count(s->pulse_timer);
+      uint32_t len = get_pulse_len(s);
+
       if (len <= 15){
         PCB_DPRINTF("DS18B20 0x%02x: ONE detected @ %d\n", s->busdev.addr, len);
       }else if (len < 450){
@@ -99,9 +114,6 @@ static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
       ptimer_stop(s->pulse_timer);
     }
     PCB_DPRINTF("DS18B20 0x%02x: state => %s!\n", s->busdev.addr, states[s->state]);
-}
-static void stm32_ds18b20_reset_tick(void *opaque){
-    stm32_ds18b20_fsm_reset((Ds18b20State*)opaque);
 }
 static void stm32_ds18b20_pulse_tick(void *opaque){
     stm32_ds18b20_fsm((Ds18b20State*)opaque, EVT_TIMER_PULSE);
@@ -124,19 +136,19 @@ static void stm32_ds18b20_irq_handler(void *opaque, int n, int level)
     uint8_t changed = s->gpio_value ^ new_value;
     uint8_t active = new_value;
     if (changed && active){
-      qapi_event_send_x_pcb(pd->addr, "DS18B20", 1, &error_abort);
+      qemu_gettimeofday(&s->tv_raise);
+//      qapi_event_send_x_pcb(pd->addr, "DS18B20", 1, &error_abort);
       PCB_DPRINTF("DS18B20 0x%02x: on\n", s->busdev.addr);
 
-      ptimer_stop(s->reset_timer);
-
+      uint32_t len = get_pulse_len(s);
+      if (len > 450){
+        stm32_ds18b20_fsm_reset(s);
+      }
       stm32_ds18b20_fsm(s, EVT_EDGE_RAISING);
     }else if (changed){
-      qapi_event_send_x_pcb(pd->addr, "DS18B20", 0, &error_abort);
+      qemu_gettimeofday(&s->tv_fall);
+//      qapi_event_send_x_pcb(pd->addr, "DS18B20", 0, &error_abort);
       PCB_DPRINTF("DS18B20 0x%02x: off\n", s->busdev.addr);
-
-      ptimer_stop(s->reset_timer);
-      ptimer_set_limit(s->reset_timer, RESET_THRESHOLD, 1);
-      ptimer_run(s->reset_timer, 1);
 
       stm32_ds18b20_fsm(s, EVT_EDGE_FALLING);
     }
@@ -187,14 +199,10 @@ static void stm32_ds18b20_realize(DeviceState *dev, Error **errp)
     bus->gpio_connect(bus, s->data_gpio, gpio_irq[0]);
 
     QEMUBH *bh;
-    bh = qemu_bh_new(stm32_ds18b20_reset_tick, s);
-    s->reset_timer = ptimer_init(bh);
     bh = qemu_bh_new(stm32_ds18b20_pulse_tick, s);
     s->pulse_timer = ptimer_init(bh);
-    // Ticks in microseconds
-    ptimer_set_freq(s->reset_timer, 1000000);
-    ptimer_set_limit(s->reset_timer, RESET_THRESHOLD, 1);
 
+    // Ticks in microseconds
     ptimer_set_freq(s->pulse_timer, 1000000);
 
     stm32_ds18b20_reset((DeviceState *)s);

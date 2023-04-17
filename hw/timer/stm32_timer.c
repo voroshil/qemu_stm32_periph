@@ -469,7 +469,7 @@ static void stm32_timer_cc2_tick(void *opaque){
 static void stm32_timer_cc3_tick(void *opaque){
     Stm32Timer *s = (Stm32Timer *)opaque;
     uint32_t elapsed = stm32_timer_get_count(s);
-//    DPRINTF("%s CC 3 Alarm raised @ %d\n", stm32_periph_name(s->periph), elapsed);
+    DPRINTF("%s CC 3 Alarm raised @ %d\n", stm32_periph_name(s->periph), elapsed);
     stm32_timer_check_cc_state(s);
 }
 static void stm32_timer_cc4_tick(void *opaque){

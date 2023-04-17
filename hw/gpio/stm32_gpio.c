@@ -157,6 +157,14 @@ static void stm32_gpio_GPIOx_ODR_write(Stm32Gpio *s, uint32_t new_value)
      * always read as 0. */
     s->GPIOx_ODR = new_value & 0x0000ffff;
 
+    /* In OPENDRAIN mode also check last input value */
+    for (pin = 0; pin < STM32_GPIO_PIN_COUNT; pin++) {
+        if (stm32_gpio_get_config_bits(s,pin) == STM32_GPIO_OUT_OPENDRAIN){
+            if (!(s->in & BIT(pin))){
+                new_value &= ~BIT(pin);
+            }
+        }
+    }
     /* Get pins that changed value */
     changed = old_value ^ new_value;
 
@@ -169,7 +177,9 @@ static void stm32_gpio_GPIOx_ODR_write(Stm32Gpio *s, uint32_t new_value)
              * the output IRQ.
              */
             if (changed_out & BIT(pin)) {
-if (pin==0) printf("GPIO%c%d => %d\n", ('A'+s->periph-1), pin, (s->GPIOx_ODR & BIT(pin)) ? 1 : 0);
+//if (pin==0) printf("GPIO%c%d => %d\n", ('A'+s->periph-1), pin, (s->GPIOx_ODR & BIT(pin)) ? 1 : 0);
+//TODO: check if this call is safe
+                qemu_set_irq(s->in_irq[pin], (new_value & BIT(pin)) ? 1 : 0);
                 qemu_set_irq(
                         /* The "irq_intercept_out" command in the qtest
                            framework overwrites the out IRQ array in the
@@ -180,7 +190,7 @@ if (pin==0) printf("GPIO%c%d => %d\n", ('A'+s->periph-1), pin, (s->GPIOx_ODR & B
                            the unit tests to work. This is something of a hack,
                            but I don't have a solution yet. */
                         s->busdev.parent_obj.gpios.lh_first->out[pin],
-                        (s->GPIOx_ODR & BIT(pin)) ? 1 : 0);
+                        (new_value & BIT(pin)) ? 1 : 0);
             }
         }
     }

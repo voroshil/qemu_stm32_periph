@@ -193,8 +193,8 @@ static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
         PCB_DPRINTF("DS18B20 0x%02x WRITE_ROM writing %d[%d] => ZERO\n", s->busdev.addr, s->byte_count, s->bit_count);
       }else{
 	// Hack due to missing OPENDRAIN support in timer implementation
-        stm32_ds18b20_set_pin(s, 0);
-        stm32_ds18b20_set_pin(s, 1);
+//        stm32_ds18b20_set_pin(s, 0);
+//        stm32_ds18b20_set_pin(s, 1);
         PCB_DPRINTF("DS18B20 0x%02x WRITE_ROM writing %d[%d] => ONE\n", s->busdev.addr, s->byte_count, s->bit_count);
       }
       s->bit_count++;
@@ -217,8 +217,8 @@ static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
         PCB_DPRINTF("DS18B20 0x%02x WRITE_TEMP writing %d[%d] => ZERO\n", s->busdev.addr, s->byte_count, s->bit_count);
       }else{
 	// Hack due to missing OPENDRAIN support in timer implementation
-        stm32_ds18b20_set_pin(s, 0);
-        stm32_ds18b20_set_pin(s, 1);
+//        stm32_ds18b20_set_pin(s, 0);
+//        stm32_ds18b20_set_pin(s, 1);
         PCB_DPRINTF("DS18B20 0x%02x WRITE_TEMP writing %d[%d] => ONE\n", s->busdev.addr, s->byte_count, s->bit_count);
       }
       s->bit_count++;
@@ -242,7 +242,7 @@ static void stm32_ds18b20_pulse_tick(void *opaque){
 static void stm32_ds18b20_irq_handler(void *opaque, int n, int level)
 {
     Ds18b20State *s = (Ds18b20State *)opaque;
-    PCBDevice *pd = PCB_DEVICE(s);
+//    PCBDevice *pd = PCB_DEVICE(s);
 
     uint8_t new_value = s->gpio_value;
 

@@ -43,8 +43,8 @@ typedef struct  {
     ptimer_state *pulse_timer;
     uint8_t state;
 
-    qemu_timeval tv_fall;
-    qemu_timeval tv_raise;
+    int64_t tv_fall;
+    int64_t tv_raise;
 
     /* Private */
 
@@ -56,14 +56,10 @@ typedef struct  {
 #define STM32_DS18B20(obj) OBJECT_CHECK(Ds18b20State, (obj), TYPE_STM32_DS18B20)
 
 static uint32_t get_pulse_len(Ds18b20State *s){
-  if (s->tv_raise.tv_sec < s->tv_fall.tv_sec)
+  if (s->tv_raise < s->tv_fall)
     return 0;
 
-  uint32_t len = s->tv_raise.tv_sec - s->tv_fall.tv_sec;
-  if (len > 2){
-    return 2000000;
-  }
-  len += (s->tv_raise.tv_usec - s->tv_fall.tv_usec);
+  uint32_t len = (s->tv_raise - s->tv_fall) / 1000;
 
   return len;
 }
@@ -136,7 +132,8 @@ static void stm32_ds18b20_irq_handler(void *opaque, int n, int level)
     uint8_t changed = s->gpio_value ^ new_value;
     uint8_t active = new_value;
     if (changed && active){
-      qemu_gettimeofday(&s->tv_raise);
+      s->tv_raise = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+//      qemu_gettimeofday(&s->tv_raise);
 //      qapi_event_send_x_pcb(pd->addr, "DS18B20", 1, &error_abort);
       PCB_DPRINTF("DS18B20 0x%02x: on\n", s->busdev.addr);
 
@@ -146,7 +143,8 @@ static void stm32_ds18b20_irq_handler(void *opaque, int n, int level)
       }
       stm32_ds18b20_fsm(s, EVT_EDGE_RAISING);
     }else if (changed){
-      qemu_gettimeofday(&s->tv_fall);
+        s->tv_fall = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+//      qemu_gettimeofday(&s->tv_fall);
 //      qapi_event_send_x_pcb(pd->addr, "DS18B20", 0, &error_abort);
       PCB_DPRINTF("DS18B20 0x%02x: off\n", s->busdev.addr);
 

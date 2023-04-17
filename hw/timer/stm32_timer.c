@@ -136,10 +136,10 @@ struct Stm32Timer {
 
     MemoryRegion  iomem;
     ptimer_state *timer;
-    ptimer_state *timer_cc1;
-    ptimer_state *timer_cc2;
-    ptimer_state *timer_cc3;
-    ptimer_state *timer_cc4;
+    struct QEMUTimer *timer_cc1;
+    struct QEMUTimer *timer_cc2;
+    struct QEMUTimer *timer_cc3;
+    struct QEMUTimer *timer_cc4;
 
     uint8_t channel_gpio_port[4];
     uint8_t channel_gpio_pin[4];
@@ -190,20 +190,22 @@ static void stm32_timer_freq(Stm32Timer *s)
     // Why do we need to multiply the frequency by 2?  This is how real hardware
     // behaves.
     uint32_t clk_freq = 2*stm32_rcc_get_periph_freq(s->stm32_rcc, s->periph) / (s->psc + 1);
+    uint32_t period_ns = 1000000000ll / clk_freq;
     DPRINTF
     (
-        "%s Update freq = 2 * %d / %d = %d\n",
+        "%s Update freq = 2 * %d / %d = %d (period = %d)\n",
         stm32_periph_name(s->periph),
         stm32_rcc_get_periph_freq(s->stm32_rcc, s->periph),
         (s->psc + 1),
-        clk_freq
+        clk_freq,
+        period_ns
     );
     if(clk_freq != 0) {
         ptimer_set_freq(s->timer, clk_freq);
-        ptimer_set_freq(s->timer_cc1, clk_freq);
-        ptimer_set_freq(s->timer_cc2, clk_freq);
-        ptimer_set_freq(s->timer_cc3, clk_freq);
-        ptimer_set_freq(s->timer_cc4, clk_freq);
+        s->timer_cc1->scale = period_ns;
+        s->timer_cc2->scale = period_ns;
+        s->timer_cc3->scale = period_ns;
+        s->timer_cc4->scale = period_ns;
     }
 }
 
@@ -227,7 +229,7 @@ static void stm32_timer_update_ocref(Stm32Timer *s, uint8_t channel, uint32_t cc
   uint8_t pin = s->channel_gpio_pin[channel];
   uint8_t old_ocref = s->ocref;
 
-  DPRINTF("[%d] mode=%d elapsed=%d, ccr=%d\n", channel, mode, elapsed, ccr);
+//  DPRINTF("[%d] mode=%d elapsed=%d, ccr=%d\n", channel, mode, elapsed, ccr);
   switch(mode){
     case 0:
       break;
@@ -417,27 +419,19 @@ static void stm32_timer_update(Stm32Timer *s)
     {
         if (TIM_CC1E(s) && TIM_CC1S(s) == 0){
             DPRINTF("%s Enabling capture/compare 1 timer\n", stm32_periph_name(s->periph));
-            ptimer_stop(s->timer_cc3);
-            ptimer_set_limit(s->timer_cc1, s->ccr1 & 0xffff, 1);
-            ptimer_run(s->timer_cc1, 1);
+            timer_mod_ns(s->timer_cc1, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (s->ccr1 & 0xffff) * s->timer_cc1->scale);
         }
         if (TIM_CC2E(s) && TIM_CC2S(s) == 0){
             DPRINTF("%s Enabling capture/compare 2 timer\n", stm32_periph_name(s->periph));
-            ptimer_stop(s->timer_cc3);
-            ptimer_set_limit(s->timer_cc2, s->ccr2 & 0xffff, 1);
-            ptimer_run(s->timer_cc2, 1);
+            timer_mod_ns(s->timer_cc2, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (s->ccr2 & 0xffff) * s->timer_cc2->scale);
         }
         if (TIM_CC3E(s) && TIM_CC3S(s) == 0){
             DPRINTF("%s Enabling capture/compare 3 timer\n", stm32_periph_name(s->periph));
-            ptimer_stop(s->timer_cc3);
-            ptimer_set_limit(s->timer_cc3, s->ccr3 & 0xffff, 1);
-            ptimer_run(s->timer_cc3, 1);
+            timer_mod_ns(s->timer_cc3, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (s->ccr3 & 0xffff) * s->timer_cc3->scale);
         }
         if (TIM_CC4E(s) && TIM_CC4S(s) == 0){
             DPRINTF("%s Enabling capture/compare 4 timer\n", stm32_periph_name(s->periph));
-            ptimer_stop(s->timer_cc3);
-            ptimer_set_limit(s->timer_cc4, s->ccr4 & 0xffff, 1);
-            ptimer_run(s->timer_cc4, 1);
+            timer_mod_ns(s->timer_cc4, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (s->ccr4 & 0xffff) * s->timer_cc4->scale);
         }
         DPRINTF("%s Enabling timer\n", stm32_periph_name(s->periph));
         ptimer_run(s->timer, (s->cr1 & TIMER_CR1_OPM));
@@ -446,10 +440,10 @@ static void stm32_timer_update(Stm32Timer *s)
     {
         DPRINTF("%s Disabling timer\n", stm32_periph_name(s->periph));
         ptimer_stop(s->timer);
-        ptimer_stop(s->timer_cc1);
-        ptimer_stop(s->timer_cc2);
-        ptimer_stop(s->timer_cc3);
-        ptimer_stop(s->timer_cc4);
+        timer_mod_ns(s->timer_cc1, 0);
+        timer_mod_ns(s->timer_cc2, 0);
+        timer_mod_ns(s->timer_cc3, 0);
+        timer_mod_ns(s->timer_cc4, 0);
     }
 }
 
@@ -475,7 +469,7 @@ static void stm32_timer_cc2_tick(void *opaque){
 static void stm32_timer_cc3_tick(void *opaque){
     Stm32Timer *s = (Stm32Timer *)opaque;
     uint32_t elapsed = stm32_timer_get_count(s);
-    DPRINTF("%s CC 3 Alarm raised @ %d\n", stm32_periph_name(s->periph), elapsed);
+//    DPRINTF("%s CC 3 Alarm raised @ %d\n", stm32_periph_name(s->periph), elapsed);
     stm32_timer_check_cc_state(s);
 }
 static void stm32_timer_cc4_tick(void *opaque){
@@ -783,14 +777,10 @@ static int stm32_timer_init(SysBusDevice *dev)
     bh = qemu_bh_new(stm32_timer_tick, s);
     s->timer = ptimer_init(bh);
 
-    bh = qemu_bh_new(stm32_timer_cc1_tick, s);
-    s->timer_cc1 = ptimer_init(bh);
-    bh = qemu_bh_new(stm32_timer_cc2_tick, s);
-    s->timer_cc2 = ptimer_init(bh);
-    bh = qemu_bh_new(stm32_timer_cc3_tick, s);
-    s->timer_cc3 = ptimer_init(bh);
-    bh = qemu_bh_new(stm32_timer_cc4_tick, s);
-    s->timer_cc4 = ptimer_init(bh);
+    s->timer_cc1 = timer_new(QEMU_CLOCK_VIRTUAL, SCALE_US, stm32_timer_cc1_tick, s);
+    s->timer_cc2 = timer_new(QEMU_CLOCK_VIRTUAL, SCALE_US, stm32_timer_cc2_tick, s);
+    s->timer_cc3 = timer_new(QEMU_CLOCK_VIRTUAL, SCALE_US, stm32_timer_cc3_tick, s);
+    s->timer_cc4 = timer_new(QEMU_CLOCK_VIRTUAL, SCALE_US, stm32_timer_cc4_tick, s);
 
     s->cr1   = 0;
     s->dier  = 0;

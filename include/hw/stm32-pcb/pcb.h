@@ -67,7 +67,7 @@ struct PCBDevice {
     do {                                                \
     qemu_timeval tv;                                    \
     qemu_gettimeofday(&tv);                             \
-    fprintf(stderr, "[%ld.%ld]:" fmt , tv.tv_sec, tv.tv_usec, ## __VA_ARGS__);  \
+    fprintf(stderr, "[%ld.%06ld]:" fmt , tv.tv_sec, tv.tv_usec, ## __VA_ARGS__);  \
     } while (0)
 #else
 #define PCB_DPRINTF(fmt, ...)

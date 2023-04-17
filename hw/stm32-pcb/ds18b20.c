@@ -192,6 +192,9 @@ static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
         stm32_ds18b20_delay(s, 20);
         PCB_DPRINTF("DS18B20 0x%02x WRITE_ROM writing %d[%d] => ZERO\n", s->busdev.addr, s->byte_count, s->bit_count);
       }else{
+	// Hack due to missing OPENDRAIN support in timer implementation
+        stm32_ds18b20_set_pin(s, 0);
+        stm32_ds18b20_set_pin(s, 1);
         PCB_DPRINTF("DS18B20 0x%02x WRITE_ROM writing %d[%d] => ONE\n", s->busdev.addr, s->byte_count, s->bit_count);
       }
       s->bit_count++;
@@ -213,6 +216,9 @@ static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
         stm32_ds18b20_delay(s, 20);
         PCB_DPRINTF("DS18B20 0x%02x WRITE_TEMP writing %d[%d] => ZERO\n", s->busdev.addr, s->byte_count, s->bit_count);
       }else{
+	// Hack due to missing OPENDRAIN support in timer implementation
+        stm32_ds18b20_set_pin(s, 0);
+        stm32_ds18b20_set_pin(s, 1);
         PCB_DPRINTF("DS18B20 0x%02x WRITE_TEMP writing %d[%d] => ONE\n", s->busdev.addr, s->byte_count, s->bit_count);
       }
       s->bit_count++;
@@ -296,7 +302,7 @@ static void stm32_ds18b20_reset(DeviceState *dev)
     s->rom[6] = 0x01;
     s->rom[7] = ow_crc8(s->rom, 7);
 
-    s->scratchpad[0] = 0x10;
+    s->scratchpad[0] = 0x23;
     s->scratchpad[1] = 0x00;
     s->scratchpad[2] = 0x00;
     s->scratchpad[3] = 0x00;

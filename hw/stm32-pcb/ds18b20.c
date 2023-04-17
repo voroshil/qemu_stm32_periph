@@ -13,16 +13,30 @@ static const char* states[] = {
   "RESET_START",
   "RESET_END",
   "PRESENCE_START",
-  "READ_START",
-  "READ_END",
+  "CMD1_READ_START",
+  "CMD1_READ_END",
+  "WRITE_ROM",
+  "WRITE_ROM_ZERO",
+  "CONVERT",
+  "WRITE_TEMP",
+  "WRITE_TEMP_ZERO",
 };
-#define STATE_IDLE           0
-#define STATE_RESET_START    1
-#define STATE_RESET_END      2
-#define STATE_PRESENCE_START 3
-#define STATE_READ_START     4
-#define STATE_READ_END       5
+#define STATE_IDLE             0
+#define STATE_RESET_START      1
+#define STATE_RESET_END        2
+#define STATE_PRESENCE_START   3
+#define STATE_CMD1_READ_START  4
+#define STATE_CMD1_READ_END    5
+#define STATE_WRITE_ROM        6
+#define STATE_WRITE_ROM_ZERO   7
+#define STATE_CONVERT          8
+#define STATE_WRITE_TEMP       9
+#define STATE_WRITE_TEMP_ZERO 10
 
+#define CMD_READ_ROM         0x33
+#define CMD_SKIP_ROM         0xcc
+#define CMD_CONVERT          0x44
+#define CMD_READ_SCRATCHPAD  0xbe
 
 #define EVT_TIMER_RESET  1
 #define EVT_TIMER_PULSE  2
@@ -43,9 +57,17 @@ typedef struct  {
     ptimer_state *pulse_timer;
     uint8_t state;
 
+    uint8_t in_buffer[16];
+    uint8_t bit_count;
+    uint8_t byte_count;
+
+    uint8_t rom[8];
+    uint8_t scratchpad[9];
+
     int64_t tv_fall;
     int64_t tv_raise;
 
+    
     /* Private */
 
     uint8_t gpio_value;
@@ -55,6 +77,25 @@ typedef struct  {
 #define TYPE_STM32_DS18B20 "stm32-periph-ds18b20"
 #define STM32_DS18B20(obj) OBJECT_CHECK(Ds18b20State, (obj), TYPE_STM32_DS18B20)
 
+static uint8_t ow_crc8( uint8_t *addr, uint8_t len)
+{
+  uint8_t crc = 0;
+  uint8_t i,j;
+  uint8_t valid = 0;
+
+  for(i=0; i<len; i++){
+    uint8_t inbyte = addr[i];
+    valid |= inbyte;
+    for (j = 0; j<8; j++) {
+      uint8_t mix = (crc ^ inbyte) & 0x01;
+      crc >>= 1;
+      if (mix) crc ^= 0x8C;
+      inbyte >>= 1;
+    }
+  }
+  if (!valid) return 0xff;
+  return crc;
+}
 static uint32_t get_pulse_len(Ds18b20State *s){
   if (s->tv_raise < s->tv_fall)
     return 0;
@@ -63,6 +104,7 @@ static uint32_t get_pulse_len(Ds18b20State *s){
 
   return len;
 }
+
 static void stm32_ds18b20_set_pin(Ds18b20State * s, int level){
     PCBBus * bus = PCB_BUS(DEVICE(&s->busdev)->parent_bus);
     PCB_DPRINTF("DS18B20 0x%02x: pin => %d\n", s->busdev.addr, level);
@@ -79,13 +121,42 @@ static void stm32_ds18b20_delay(Ds18b20State* s, int delay){
 static void stm32_ds18b20_fsm_reset(Ds18b20State *s){
     PCB_DPRINTF("DS18B20 0x%02x: reset detected\n", s->busdev.addr);
     s->state = STATE_RESET_START;
+    s->bit_count = 0;
+    s->byte_count = 0;
     ptimer_stop(s->pulse_timer);
     ptimer_set_count(s->pulse_timer, 0);
 }
 
+static void process_byte(Ds18b20State * s){
+  PCB_DPRINTF("DS18B20 0x%02x: BYTE detected %02x => %d[%d]\n", s->busdev.addr, s->in_buffer[s->byte_count], s->byte_count, s->bit_count);
+  if (s->byte_count == 0 && s->in_buffer[0] == CMD_READ_ROM){
+      s->state = STATE_WRITE_ROM;
+      s->byte_count = 0;
+      s->bit_count = 0;
+      return;
+  }if (s->byte_count == 1 && s->in_buffer[0] == CMD_SKIP_ROM && s->in_buffer[1] == CMD_CONVERT){
+      s->state = STATE_CONVERT;
+      s->byte_count = 0;
+      s->bit_count = 0;
+      return;
+  }if (s->byte_count == 1 && s->in_buffer[0] == CMD_SKIP_ROM && s->in_buffer[1] == CMD_READ_SCRATCHPAD){
+      s->state = STATE_WRITE_TEMP;
+      s->byte_count = 0;
+      s->bit_count = 0;
+      return;
+  }
+  s->byte_count = (s->byte_count + 1) % 16;
+  s->in_buffer[s->byte_count] = 0;
+  s->bit_count = 0;
+}
 static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
+    uint32_t len = get_pulse_len(s);
 
-    if(s->state == STATE_RESET_END && event == EVT_TIMER_PULSE){
+    if (event == EVT_EDGE_RAISING && len >= 450){
+        stm32_ds18b20_fsm_reset(s);
+        s->state = STATE_RESET_END;
+        stm32_ds18b20_delay(s, 30);
+    }else if(s->state == STATE_RESET_END && event == EVT_TIMER_PULSE){
       s->state = STATE_PRESENCE_START;
       stm32_ds18b20_set_pin(s, 0);
       stm32_ds18b20_delay(s, 120);
@@ -93,21 +164,69 @@ static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
       s->state = STATE_RESET_END;
       stm32_ds18b20_delay(s, 30);
     }else if (s->state == STATE_PRESENCE_START && event == EVT_TIMER_PULSE){
-      s->state = STATE_READ_START;
+      s->state = STATE_CMD1_READ_START;
       stm32_ds18b20_set_pin(s, 1);
-    }else if (s->state == STATE_READ_START && event == EVT_EDGE_FALLING){
+    }else if (s->state == STATE_CMD1_READ_START && event == EVT_EDGE_FALLING){
       stm32_ds18b20_delay(s, 500);
-    }else if (s->state == STATE_READ_START && event == EVT_EDGE_RAISING){
-      uint32_t len = get_pulse_len(s);
-
+    }else if (s->state == STATE_CMD1_READ_START && event == EVT_EDGE_RAISING){
       if (len <= 15){
-        PCB_DPRINTF("DS18B20 0x%02x: ONE detected @ %d\n", s->busdev.addr, len);
-      }else if (len < 450){
-        PCB_DPRINTF("DS18B20 0x%02x: ZERO detected @ %d\n", s->busdev.addr, len);
+        PCB_DPRINTF("DS18B20 0x%02x: ONE detected @ %d => %d[%d]\n", s->busdev.addr, len, s->byte_count, s->bit_count);
+        s->in_buffer[s->byte_count] |= (1<<(s->bit_count));
+        s->bit_count++;
+        if (s->bit_count == 8){
+          process_byte(s);
+        }
       }else{
-        stm32_ds18b20_fsm_reset(s);
+        PCB_DPRINTF("DS18B20 0x%02x: ZERO detected @ %d => %d[%d]\n", s->busdev.addr, len, s->byte_count, s->bit_count);
+        s->in_buffer[s->byte_count] &= ~(1<<(s->bit_count));
+        s->bit_count++;
+        if (s->bit_count == 8){
+          process_byte(s);
+        }
       }
       ptimer_stop(s->pulse_timer);
+    }else if(s->state == STATE_WRITE_ROM && event == EVT_EDGE_RAISING){
+      if (!(s->rom[s->byte_count] & (1<<s->bit_count))){
+        s->state = STATE_WRITE_ROM_ZERO;
+        stm32_ds18b20_set_pin(s, 0);
+        stm32_ds18b20_delay(s, 20);
+        PCB_DPRINTF("DS18B20 0x%02x WRITE_ROM writing %d[%d] => ZERO\n", s->busdev.addr, s->byte_count, s->bit_count);
+      }else{
+        PCB_DPRINTF("DS18B20 0x%02x WRITE_ROM writing %d[%d] => ONE\n", s->busdev.addr, s->byte_count, s->bit_count);
+      }
+      s->bit_count++;
+      if(s->bit_count == 8){
+        if (s->byte_count == 7){
+          s->state = STATE_IDLE;
+        }else{
+          s->byte_count = (s->byte_count + 1) % 8;
+          s->bit_count = 0;
+        }
+      }
+    }else if (s->state == STATE_WRITE_ROM_ZERO && event == EVT_TIMER_PULSE){
+      s->state = STATE_WRITE_ROM;
+      stm32_ds18b20_set_pin(s, 1);
+    }else if(s->state == STATE_WRITE_TEMP && event == EVT_EDGE_RAISING){
+      if (!(s->scratchpad[s->byte_count] & (1<<s->bit_count))){
+        s->state = STATE_WRITE_TEMP_ZERO;
+        stm32_ds18b20_set_pin(s, 0);
+        stm32_ds18b20_delay(s, 20);
+        PCB_DPRINTF("DS18B20 0x%02x WRITE_TEMP writing %d[%d] => ZERO\n", s->busdev.addr, s->byte_count, s->bit_count);
+      }else{
+        PCB_DPRINTF("DS18B20 0x%02x WRITE_TEMP writing %d[%d] => ONE\n", s->busdev.addr, s->byte_count, s->bit_count);
+      }
+      s->bit_count++;
+      if(s->bit_count == 8){
+        if (s->byte_count == 8){
+          s->state = STATE_IDLE;
+        }else{
+          s->byte_count = (s->byte_count + 1) % 9;
+          s->bit_count = 0;
+        }
+      }
+    }else if (s->state == STATE_WRITE_TEMP_ZERO && event == EVT_TIMER_PULSE){
+      s->state = STATE_WRITE_TEMP;
+      stm32_ds18b20_set_pin(s, 1);
     }
     PCB_DPRINTF("DS18B20 0x%02x: state => %s!\n", s->busdev.addr, states[s->state]);
 }
@@ -168,6 +287,25 @@ static void stm32_ds18b20_reset(DeviceState *dev)
     Ds18b20State *s = STM32_DS18B20(dev);
 
     s->gpio_value = 0;
+    s->rom[0] = 0x00;
+    s->rom[1] = 0x00;
+    s->rom[2] = 0x00;
+    s->rom[3] = 0x00;
+    s->rom[4] = 0x00;
+    s->rom[5] = 0x00;
+    s->rom[6] = 0x01;
+    s->rom[7] = ow_crc8(s->rom, 7);
+
+    s->scratchpad[0] = 0x10;
+    s->scratchpad[1] = 0x00;
+    s->scratchpad[2] = 0x00;
+    s->scratchpad[3] = 0x00;
+    s->scratchpad[4] = 0x10;
+    s->scratchpad[5] = 0xff;
+    s->scratchpad[6] = 0xff;
+    s->scratchpad[7] = 0x10;
+    s->scratchpad[8] = ow_crc8(s->scratchpad, 8);
+
     stm32_ds18b20_fsm_reset(s);
 }
 

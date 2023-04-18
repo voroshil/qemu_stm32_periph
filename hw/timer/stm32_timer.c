@@ -30,7 +30,7 @@
 /* DEFINITIONS*/
 
 /* See the README file for details on these settings. */
-#define DEBUG_STM32_TIMER
+//#define DEBUG_STM32_TIMER
 
 #ifdef DEBUG_STM32_TIMER
 #define DPRINTF2(fmt, ...)                                       \

@@ -54,6 +54,7 @@ typedef struct  {
 
     /* Properties */
     uint16_t data_gpio;
+    uint64_t uid;
     ptimer_state *pulse_timer;
     uint8_t state;
 
@@ -107,7 +108,7 @@ static uint32_t get_pulse_len(Ds18b20State *s){
 
 static void stm32_ds18b20_set_pin(Ds18b20State * s, int level){
     PCBBus * bus = PCB_BUS(DEVICE(&s->busdev)->parent_bus);
-    PCB_DPRINTF("DS18B20 0x%02x: pin => %d\n", s->busdev.addr, level);
+//    PCB_DPRINTF("DS18B20 0x%02x: pin => %d\n", s->busdev.addr, level);
     bus->gpio_set_value(bus, s->data_gpio, level ? 3300: 0);
 }
 
@@ -170,14 +171,14 @@ static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
       stm32_ds18b20_delay(s, 500);
     }else if (s->state == STATE_CMD1_READ_START && event == EVT_EDGE_RAISING){
       if (len <= 15){
-        PCB_DPRINTF("DS18B20 0x%02x: ONE detected @ %d => %d[%d]\n", s->busdev.addr, len, s->byte_count, s->bit_count);
+//        PCB_DPRINTF("DS18B20 0x%02x: ONE detected @ %d => %d[%d]\n", s->busdev.addr, len, s->byte_count, s->bit_count);
         s->in_buffer[s->byte_count] |= (1<<(s->bit_count));
         s->bit_count++;
         if (s->bit_count == 8){
           process_byte(s);
         }
       }else{
-        PCB_DPRINTF("DS18B20 0x%02x: ZERO detected @ %d => %d[%d]\n", s->busdev.addr, len, s->byte_count, s->bit_count);
+//        PCB_DPRINTF("DS18B20 0x%02x: ZERO detected @ %d => %d[%d]\n", s->busdev.addr, len, s->byte_count, s->bit_count);
         s->in_buffer[s->byte_count] &= ~(1<<(s->bit_count));
         s->bit_count++;
         if (s->bit_count == 8){
@@ -190,13 +191,12 @@ static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
         s->state = STATE_WRITE_ROM_ZERO;
         stm32_ds18b20_set_pin(s, 0);
         stm32_ds18b20_delay(s, 20);
-        PCB_DPRINTF("DS18B20 0x%02x WRITE_ROM writing %d[%d] => ZERO\n", s->busdev.addr, s->byte_count, s->bit_count);
+//        PCB_DPRINTF("DS18B20 0x%02x WRITE_ROM writing %d[%d] => ZERO\n", s->busdev.addr, s->byte_count, s->bit_count);
       }else{
 	// Hack due to missing OPENDRAIN support in timer implementation
-//        stm32_ds18b20_set_pin(s, 0);
-//        stm32_ds18b20_set_pin(s, 1);
-        PCB_DPRINTF("DS18B20 0x%02x WRITE_ROM writing %d[%d] => ONE\n", s->busdev.addr, s->byte_count, s->bit_count);
+//        PCB_DPRINTF("DS18B20 0x%02x WRITE_ROM writing %d[%d] => ONE\n", s->busdev.addr, s->byte_count, s->bit_count);
       }
+      if (s->bit_count==0) PCB_DPRINTF("DS18B20 0x%02x: ROM writing %02x <= %d[%d]\n", s->busdev.addr, s->rom[s->byte_count], s->byte_count, s->bit_count);
       s->bit_count++;
       if(s->bit_count == 8){
         if (s->byte_count == 7){
@@ -214,13 +214,12 @@ static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
         s->state = STATE_WRITE_TEMP_ZERO;
         stm32_ds18b20_set_pin(s, 0);
         stm32_ds18b20_delay(s, 20);
-        PCB_DPRINTF("DS18B20 0x%02x WRITE_TEMP writing %d[%d] => ZERO\n", s->busdev.addr, s->byte_count, s->bit_count);
+//        PCB_DPRINTF("DS18B20 0x%02x WRITE_TEMP writing %d[%d] => ZERO\n", s->busdev.addr, s->byte_count, s->bit_count);
       }else{
 	// Hack due to missing OPENDRAIN support in timer implementation
-//        stm32_ds18b20_set_pin(s, 0);
-//        stm32_ds18b20_set_pin(s, 1);
-        PCB_DPRINTF("DS18B20 0x%02x WRITE_TEMP writing %d[%d] => ONE\n", s->busdev.addr, s->byte_count, s->bit_count);
+//        PCB_DPRINTF("DS18B20 0x%02x WRITE_TEMP writing %d[%d] => ONE\n", s->busdev.addr, s->byte_count, s->bit_count);
       }
+      if (s->bit_count==0) PCB_DPRINTF("DS18B20 0x%02x: TEMP writing %02x <= %d[%d]\n", s->busdev.addr, s->scratchpad[s->byte_count], s->byte_count, s->bit_count);
       s->bit_count++;
       if(s->bit_count == 8){
         if (s->byte_count == 8){
@@ -234,7 +233,7 @@ static void stm32_ds18b20_fsm(Ds18b20State* s, uint8_t event){
       s->state = STATE_WRITE_TEMP;
       stm32_ds18b20_set_pin(s, 1);
     }
-    PCB_DPRINTF("DS18B20 0x%02x: state => %s!\n", s->busdev.addr, states[s->state]);
+//    PCB_DPRINTF("DS18B20 0x%02x: state => %s!\n", s->busdev.addr, states[s->state]);
 }
 static void stm32_ds18b20_pulse_tick(void *opaque){
     stm32_ds18b20_fsm((Ds18b20State*)opaque, EVT_TIMER_PULSE);
@@ -260,18 +259,18 @@ static void stm32_ds18b20_irq_handler(void *opaque, int n, int level)
       s->tv_raise = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 //      qemu_gettimeofday(&s->tv_raise);
 //      qapi_event_send_x_pcb(pd->addr, "DS18B20", 1, &error_abort);
-      PCB_DPRINTF("DS18B20 0x%02x: on\n", s->busdev.addr);
+//      PCB_DPRINTF("DS18B20 0x%02x: on\n", s->busdev.addr);
 
       uint32_t len = get_pulse_len(s);
-      if (len > 450){
-        stm32_ds18b20_fsm_reset(s);
-      }
+//      if (len > 450){
+//        stm32_ds18b20_fsm_reset(s);
+//      }
       stm32_ds18b20_fsm(s, EVT_EDGE_RAISING);
     }else if (changed){
         s->tv_fall = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 //      qemu_gettimeofday(&s->tv_fall);
 //      qapi_event_send_x_pcb(pd->addr, "DS18B20", 0, &error_abort);
-      PCB_DPRINTF("DS18B20 0x%02x: off\n", s->busdev.addr);
+//      PCB_DPRINTF("DS18B20 0x%02x: off\n", s->busdev.addr);
 
       stm32_ds18b20_fsm(s, EVT_EDGE_FALLING);
     }
@@ -293,13 +292,13 @@ static void stm32_ds18b20_reset(DeviceState *dev)
     Ds18b20State *s = STM32_DS18B20(dev);
 
     s->gpio_value = 0;
-    s->rom[0] = 0x00;
-    s->rom[1] = 0x00;
-    s->rom[2] = 0x00;
-    s->rom[3] = 0x00;
-    s->rom[4] = 0x00;
-    s->rom[5] = 0x00;
-    s->rom[6] = 0x01;
+    s->rom[0] = (s->uid >> 56) & 0xff;
+    s->rom[1] = (s->uid >> 48) & 0xff;
+    s->rom[2] = (s->uid >> 40) & 0xff;
+    s->rom[3] = (s->uid >> 32) & 0xff;
+    s->rom[4] = (s->uid >> 24) & 0xff;
+    s->rom[5] = (s->uid >> 16) & 0xff;
+    s->rom[6] = (s->uid >> 8) & 0xff;
     s->rom[7] = ow_crc8(s->rom, 7);
 
     s->scratchpad[0] = 0x23;
@@ -351,6 +350,7 @@ static void stm32_ds18b20_realize(DeviceState *dev, Error **errp)
 }
 static Property stm32_ds18b20_properties[] = {
     DEFINE_PROP_UINT16("data", Ds18b20State, data_gpio, STM32_PC13),
+    DEFINE_PROP_UINT64("uid", Ds18b20State, uid, 0x0100LL),
     DEFINE_PROP_END_OF_LIST()
 };
 
